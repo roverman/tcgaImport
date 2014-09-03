@@ -1588,21 +1588,37 @@ def supported_list():
 def archive_list(platform=None):
     if platform is None:
         q = CustomQuery("Archive[@isLatest=1][ArchiveType[@type=Level_3]]")
-        out = {}
-        for e in q:
-            name = e['baseName']
-            if name not in out:
-                out[name] = True
-        return out.keys()
     else:
         q = CustomQuery("Archive[@isLatest=1][ArchiveType[@type=Level_3]][Platform[@alias=%s]]" % (platform))
-        out = {}
-        for e in q:
+    out = {}
+    for e in q:
+        name = e['baseName']
+        if name not in out:
+            out[name] = True
+    return out.keys()
+
+
+def clinicnal_archive_list():
+    """Returns the list of latest clinical archives"""
+    q = CustomQuery("Archive[@isLatest=1][Platform[@alias=bio]]")
+    out = {}
+    for e in q:
+        name = e['baseName']
+        if name not in out:
+            out[name] = True
+    return out.keys()
+
+def mutation_archive_list():
+    """Returns a list of latests mutation calling files"""
+    q = CustomQuery("Archive[@isLatest=1][Platform[@alias=Mutation Calling]]")
+    out = {}
+    for e in q:
+        if e['deployLocation'].count("anonymous"):
             name = e['baseName']
             if name not in out:
-                out[name] = True
-        return out.keys()
-
+                print name
+                out[name] = True        
+    return out.keys()
 
 def main_list(options):
     #################
@@ -1628,24 +1644,10 @@ def main_list(options):
             print c
 
     if options.list_type == "clinical":
-        q = CustomQuery("Archive[@isLatest=1][Platform[@alias=bio]]")
-        out = {}
-        for e in q:
-            name = e['baseName']
-            if name not in out:
-                print name
-                out[name] = True
+        print '\n'.join(clinicnal_archive_list())
 
     if options.list_type == "mutation":
-        q = CustomQuery("Archive[@isLatest=1][Platform[@alias=Mutation Calling]]")
-        out = {}
-        for e in q:
-            if e['deployLocation'].count("anonymous"):
-                name = e['baseName']
-                if name not in out:
-                    print name
-                    out[name] = True        
-
+        print '\n'.join(mutation_archive_list())
     """
     if options.list_platform_outputs:
         for p in tcgaConfig[options.list_platform_outputs].getOutputList():

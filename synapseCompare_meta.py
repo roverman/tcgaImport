@@ -7,7 +7,7 @@ import json
 import sys
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 
 if __name__ == "__main__":
@@ -27,6 +27,8 @@ if __name__ == "__main__":
         for plat in tcgaImport.platform_list():
             logging.info("Queueing: %s" % (plat))
             basename_list += tcgaImport.archive_list(plat)
+        basename_list.extend(tcgaImport.clinicnal_archive_list())
+        basename_list.extend(tcgaImport.mutation_archive_list())
 
     handle = open(args.output, "w") if args.output is not None else  sys.stdout
     syn = synapseclient.login()
