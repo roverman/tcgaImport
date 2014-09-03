@@ -24,7 +24,7 @@ def log(message):
     sys.stdout.write(message + "\n")
 
 def find_child(syn, project, name):
-    query = "select * from entity where parentId=='%s' and name=='%s'" % (project, name)
+    query = "select id from entity where parentId=='%s' and name=='%s'" % (project, name)
     res = syn.query(query)
     for i in res['results']:
         return i['entity.id']
@@ -64,15 +64,14 @@ if __name__ == "__main__":
     
     for a in glob(os.path.join( args.src, "*.json")):
         log( "Loading:" + a )
-        handle = open(a)
-        meta = json.loads(handle.read())
-        handle.close()
+        with open(a) as handle:
+            meta = json.loads(handle.read())
         
         if args.acronym is None or args.acronym == meta['annotations']['acronym']:
             
             dpath = re.sub(r'.json$', '', a)
             if os.stat(dpath).st_size > 0:                               
-                query = "select * from entity where benefactorId=='%s' and name=='%s'" % (args.project, meta['name'])
+                query = "select id from entity where benefactorId=='%s' and name=='%s'" % (args.project, meta['name'])
                 res = syn.query(query)
                 #print meta['@id'], res
                 if res['totalNumberOfResults'] == 0:

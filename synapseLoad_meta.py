@@ -51,14 +51,13 @@ if __name__ == "__main__":
     
     for a in glob(os.path.join( args.src, "*.json")):
         log( "Loading:" + a )
-        handle = open(a)
-        meta = json.loads(handle.read())
-        handle.close()
+        with open(a) as handle:
+            meta = json.loads(handle.read())
         
         if args.acronym is None or args.acronym == meta['annotations']['acronym']:
             dpath = re.sub(r'.json$', '', a)            
             name = meta['name']                                        
-            query = "select * from entity where benefactorId=='%s' and name=='%s'" % (args.project, name)
+            query = "select id from entity where benefactorId=='%s' and name=='%s'" % (args.project, name)
             res = syn.query(query)
             #print meta['@id'], res
             if res['totalNumberOfResults'] != 0:

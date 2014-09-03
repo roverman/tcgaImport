@@ -17,7 +17,7 @@ def log(message):
     sys.stdout.write(message + "\n")
 
 def find_child(syn, project, name):
-    query = "select * from entity where parentId=='%s' and name=='%s'" % (project, name)
+    query = "select id from entity where parentId=='%s' and name=='%s'" % (project, name)
     res = syn.query(query)
     for i in res['results']:
         return i['entity.id']
@@ -43,9 +43,8 @@ def main():
     
     for a in glob(os.path.join( args.src, "*.json")):
         log( "Loading:" + a )
-        handle = open(a)
-        meta = json.loads(handle.read())
-        handle.close()
+        with open(a) as handle:
+            meta = json.loads(handle.read())
         
         dpath = re.sub(r'.json$', '', a)
                                 

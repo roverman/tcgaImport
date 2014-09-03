@@ -1813,6 +1813,8 @@ def main_build(options):
 
 if __name__ == "__main__":
     
+    logging.basicConfig(level=logging.DEBUG)
+
     parser = ArgumentParser()
     #Stack.addJobTreeOptions(parser) 
 

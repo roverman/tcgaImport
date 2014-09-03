@@ -42,7 +42,7 @@ if __name__ == "__main__":
      
             dpath = re.sub(r'.json$', '', a)        
                                         
-            query = "select * from entity where benefactorId=='%s' and name=='%s'" % (args.project, meta["name"])
+            query = "select id from entity where benefactorId=='%s' and name=='%s'" % (args.project, meta["name"])
             res = syn.query(query)
             #print meta['@id'], res
             if res['totalNumberOfResults'] != 0:
@@ -56,11 +56,11 @@ if __name__ == "__main__":
                             u['name'] = u['url']
                         
                     if len(used_refs):
-                        activity = synapseclient.Activity(
-                            meta['provenance']['name'])
+                        activity = synapseclient.Activity(meta['provenance']['name'])
                         if 'description' in meta['provenance']:
                             activity['description'] = meta['provenance']['description']
                         activity['used'] = used_refs
+                        activity.executed('https://github.com/Sage-Bionetworks/tcgaImport')
                         #print json.dumps(activity, indent=4)
                         #print ent
                         #prov = syn.getProvenance(ent)
