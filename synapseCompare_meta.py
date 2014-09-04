@@ -48,24 +48,29 @@ if __name__ == "__main__":
 
             if entity_id is not None:
                 prov = syn.getProvenance(entity_id)
-
+                #Filter out only used not executed items
+                prov = [x for x in prov['used'] if not x.get('wasExecuted', False)]
                 logging.info("Provenance: %s" % (prov))
                 found_count = 0
                 for req_elem in request['provenance']['used']:
                     found = False
-                    for elem in prov['used']:
+                    for elem in prov:
                         if req_elem['url'] == elem['url']:
                             found = True
                     if found:
                         found_count += 1
                     else:
                         logging.info("Not Found: %s" % (req_elem['url']))
-                logging.info("Found %s of %s (%s)" % (found_count, len(prov['used']), len(request['provenance']['used'])) )
-                if found_count == len(prov['used']) and found_count == len(request['provenance']['used']):
+                logging.info("Found %s of %s (%s)" % (found_count, len(prov), len(request['provenance']['used'])) )
+                if found_count == len(prov) and found_count == len(request['provenance']['used']):
                     handle.write("READY: %s\n" % (basename)) 
                 else:
-                    handle.write("UPDATE: %s\n" % (basename)) 
+                    handle.write("UPDATE: %s\n" % (basename))
+                     #We have already notified that basename needs to be updated skip rest of subtypes
+                    break
             else:
                 handle.write("MISSING: %s\n" % (basename)) 
+                #We have already notified that basename is missing skip rest of subtypes
+                break
 
     handle.close()
