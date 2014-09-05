@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-
-
 import os
 import sys
 import json
@@ -37,27 +35,20 @@ meta_fields = {
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("src", help="Scan directory", default=None)
-    parser.add_argument("--user", help="UserName", default=None)
-    parser.add_argument("--password", help="Password", default=None)
     parser.add_argument("--project", help="Project", default=None)
     parser.add_argument("--acronym", help="Limit to one Acronym", default=None)
 
     args = parser.parse_args()
     
-    syn = synapseclient.Synapse()
-    syn.login(args.user, args.password)
-    
-    study_ids = {}
+    syn = synapseclient.login()
     
     for a in glob(os.path.join( args.src, "*.json")):
         log( "Loading:" + a )
         with open(a) as handle:
             meta = json.loads(handle.read())
-        
         if args.acronym is None or args.acronym == meta['annotations']['acronym']:
-            dpath = re.sub(r'.json$', '', a)            
-            name = meta['name']                                        
-            query = "select id from entity where benefactorId=='%s' and name=='%s'" % (args.project, name)
+            dpath = re.sub(r'.json$', '', a)
+            query = "select id from entity where benefactorId=='%s' and name=='%s'" % (args.project, meta['name'])
             res = syn.query(query)
             #print meta['@id'], res
             if res['totalNumberOfResults'] != 0:

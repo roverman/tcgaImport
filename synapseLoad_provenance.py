@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-
-
 import os
 import sys
 import json
@@ -10,44 +8,30 @@ import synapseclient
 import hashlib
 from argparse import ArgumentParser
 
-
 def log(message):
-    sys.stdout.write(message + "\n")
+    sys.stderr.write(message + "\n")
     
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("src", help="Scan directory", default=None)
-    parser.add_argument("--user", help="UserName", default=None)
-    parser.add_argument("--password", help="Password", default=None)
     parser.add_argument("--project", help="Project", default=None)
     parser.add_argument("--acronym", help="Limit to one Acronym", default=None)
-   
+
     args = parser.parse_args()
     
-    syn = synapseclient.Synapse()
-    if args.user is not None and args.password is not None:
-        syn.login(args.user, args.password)
-    else:
-        syn.login()
-    
-    study_ids = {}
+    syn = synapseclient.login()
     
     for a in glob(os.path.join( args.src, "*.json")):
         log( "Loading:" + a )
-        handle = open(a)
-        meta = json.loads(handle.read())
-        handle.close()
-   
+        with open(a) as handle:
+            meta = json.loads(handle.read())
         if args.acronym is None or args.acronym == meta['annotations']['acronym']:
-     
-            dpath = re.sub(r'.json$', '', a)        
-                                        
-            query = "select id from entity where benefactorId=='%s' and name=='%s'" % (args.project, meta["name"])
+            dpath = re.sub(r'.json$', '', a)
+            query = "select id from entity where benefactorId=='%s' and name=='%s'" % (args.project, meta['name'])
             res = syn.query(query)
             #print meta['@id'], res
             if res['totalNumberOfResults'] != 0:
                 log( "Found " + res['results'][0]['entity.id'] )                    
-                #ent = syn.getEntity( res['results'][0]['entity.id'] )
                 ent_id = res['results'][0]['entity.id']
                 if 'provenance' in meta:
                     used_refs = meta['provenance']['used']
