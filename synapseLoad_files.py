@@ -1,16 +1,13 @@
 #!/usr/bin/env python
-
-
 import os
 import sys
 import json
 import re
 from glob import glob
 import synapseclient
+from synapseclient import Activity, File
 import hashlib
-import zipfile
 from argparse import ArgumentParser
-
 
 def get_md5(path):
     md5 = hashlib.md5()
@@ -21,94 +18,67 @@ def get_md5(path):
     return md5str
 
 def log(message):
-    sys.stdout.write(message + "\n")
+    sys.stderr.write(message + "\n")
 
 def find_child(syn, project, name):
     query = "select id from entity where parentId=='%s' and name=='%s'" % (project, name)
-    res = syn.query(query)
-    for i in res['results']:
-        return i['entity.id']
-
-class IDMapping:
-    def __init__(self, syn, project):
-        self.syn = syn
-        self.project = project
+    for res in syn.query(query)['results']:
+        return res['entity.id']
+    return None
     
-    def getParent(self, meta):
-        fid = find_child(self.syn, self.project, meta['annotations']['acronym'])
-        if fid is None:
-            return None
-        pid = find_child(self.syn, fid, meta['platform'])
-        return pid
+def getParentFolder(syn, project, meta):
+    fid = find_child(syn, project, meta['annotations']['acronym'])
+    if fid is None:
+        return None
+    pid = find_child(syn, fid, meta['platform'])
+    return pid
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("src", help="Scan directory", default=None)
-    parser.add_argument("--user", help="UserName", default=None)
-    parser.add_argument("--password", help="Password", default=None)
     parser.add_argument("--project", help="Project", default=None)
     parser.add_argument("--skip-md5", help="Skip MD5", action="store_true", default=False)
     parser.add_argument("--push", help="Push", action="store_true", default=False)
-    parser.add_argument("--new-only", help="Push only new files", action="store_true", default=False)
     parser.add_argument("--acronym", help="Limit to one Acronym", default=None)
 
     args = parser.parse_args()
-    
-    syn = synapseclient.Synapse()
-    if args.user is not None and args.password is not None:
-        syn.login(args.user, args.password)
-    else:
-        syn.login()
-        
-    study_ids = IDMapping(syn, args.project)
+    syn = synapseclient.login()
     
     for a in glob(os.path.join( args.src, "*.json")):
         log( "Loading:" + a )
         with open(a) as handle:
-            meta = json.loads(handle.read())
+            meta = json.load(handle)
+        dpath = re.sub(r'.json$', '', a)
+        #Skip the rest of the loop if data file is empty or we are not doing the current acronyms
+        if os.stat(dpath).st_size==0 or (args.acronym != meta['annotations']['acronym'] and args.acronym is not None):
+            continue
         
-        if args.acronym is None or args.acronym == meta['annotations']['acronym']:
-            
-            dpath = re.sub(r'.json$', '', a)
-            if os.stat(dpath).st_size > 0:                               
-                query = "select id from entity where benefactorId=='%s' and name=='%s'" % (args.project, meta['name'])
-                res = syn.query(query)
-                #print meta['@id'], res
-                if res['totalNumberOfResults'] == 0:
-                    log( "not found:" + meta['name'] )
-                    if args.push:
-                        parentId= study_ids.getParent(meta)
-                        if parentId is not None:
-                            entity = synapseclient.File(dpath, name=meta['name'], parentId=parentId)
-                            #entity['contentType']='text/csv'
-                            entity = syn.store(entity)
-                            print "Created ", entity['id']
-                else:
-                    if not args.new_only:
-                        ent_id = res['results'][0]['entity.id']
-                        log( "Found: " + ent_id )
-                        upload = False
-                        
-                        tmp_ent = syn.get(ent_id, downloadFile=False)
-                        if tmp_ent.md5 != meta['md5']:
-                            log("MD5 Miss: " + ent_id)
-                            upload = True
-                        else:
-                            log("MD5 Match: " + ent_id)
-                        
-                            
-                        if upload:
-                            if args.push: 
-                                log("Uploading: " + ent_id)
-                                #archive_path = "archive.zip"
-                                #z = zipfile.ZipFile(archive_path, "w")
-                                #z.write(dpath, os.path.basename(dpath))
-                                #z.close()
-                                entity=syn.get(ent_id)
-                                #entity['contentType']='text/csv'
-                                #entity = syn.store(entity)
-                                #syn.uploadFile(entity, archive_path)
-                                syn.uploadFile(entity, dpath)
-                            else:
-                                log("To Be Uploaded: " + ent_id + " : " + meta['name'])
-                                
+        parentId= getParentFolder(syn, args.project, meta)
+        #Determine if we are updating an existing file and if we should update based on md5
+        query = "select id from entity where parentId=='%s' and name=='%s'" % (parentId, meta['name'])
+        res = list(syn.chunkedQuery(query))
+        if len(res) != 0:
+            tmp_ent = syn.get(res[0]['entity.id'], downloadFile=False)
+            upload = (tmp_ent.md5 != meta['md5'])
+            log( "\tFound: %s and upload (MD5 doesn't match)= %s" %(tmp_ent.id, upload))
+        else:
+            log("Not found:" + meta['name'])
+            upload = True
+        #Prepare the entity for upload
+        if upload and args.push: 
+            entity = File(dpath, name=meta['name'], parentId=parentId, annotations=meta['annotations'])
+            if 'provenance' in meta:
+                #Fix labels for urls
+                for u in meta['provenance']['used']:
+                    if 'name' not in u and 'url' in u:
+                        u['name'] = u['url']
+                prov = Activity(data=meta['provenance'])
+                prov.executed('https://github.com/Sage-Bionetworks/tcgaImport')
+
+            else:
+                prov=None
+            log('\tUploading:%s' %entity.name)
+            entity = syn.store(entity, activity=prov)
+            log('\tCreated/Updated: **** %s ****' %entity.id)
+
+
