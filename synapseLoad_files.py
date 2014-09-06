@@ -5,7 +5,7 @@ import json
 import re
 from glob import glob
 import synapseclient
-from synapseclient import Activity, File
+from synapseclient import Activity, File, Folder
 import hashlib
 from argparse import ArgumentParser
 
@@ -29,8 +29,12 @@ def find_child(syn, project, name):
 def getParentFolder(syn, project, meta):
     fid = find_child(syn, project, meta['annotations']['acronym'])
     if fid is None:
-        return None
+        folder = syn.store(Folder(name=meta['annotations']['acronym'], parentId=project))
+        fid = folder.id
     pid = find_child(syn, fid, meta['platform'])
+    if pid is None:
+        folder = syn.store(Folder(name=meta['platform'], parentId=fid))
+        pid = folder.id
     return pid
 
 if __name__ == "__main__":
