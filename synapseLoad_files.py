@@ -4,10 +4,12 @@ import sys
 import json
 import re
 from glob import glob
+from  multiprocessing.dummy import Pool
 import synapseclient
 from synapseclient import Activity, File, Folder
 import hashlib
 from argparse import ArgumentParser
+
 
 def get_md5(path):
     md5 = hashlib.md5()
@@ -37,6 +39,50 @@ def getParentFolder(syn, project, meta):
         pid = folder.id
     return pid
 
+def loadOneSample(a):
+    """Goes through a single json annotation file a and:
+        1) Finds the parent Folder where to store the file (or makes directories)
+        2) Fetches the md5 of any existing file and compares
+        3) If new or different md5 upload file.
+    """
+    log( "Loading:" + a )
+    with open(a) as handle:
+        meta = json.load(handle)
+    dpath = re.sub(r'.json$', '', a)
+    #Skip the rest of the loop if data file is empty or we are not doing the current acronyms
+    if os.stat(dpath).st_size==0 or (args.acronym != meta['annotations']['acronym'] and args.acronym is not None):
+        return 
+
+    parentId= getParentFolder(syn, args.project, meta)
+    #Determine if we are updating an existing file and if we should update based on md5
+    query = "select id from entity where parentId=='%s' and name=='%s'" % (parentId, meta['name'])
+    res = list(syn.chunkedQuery(query))
+    if len(res) != 0:
+        tmp_ent = syn.get(res[0]['entity.id'], downloadFile=False)
+        upload = (tmp_ent.md5 != meta['md5'])
+        log( "\tFound: %s and upload (MD5 doesn't match)= %s" %(tmp_ent.id, upload))
+    else:
+        log("Not found:" + meta['name'])
+        upload = True
+    #Prepare the entity for upload
+    if upload and args.push: 
+        entity = File(dpath, name=meta['name'], parentId=parentId, annotations=meta['annotations'])
+        if 'provenance' in meta:
+            #Fix labels for urls
+            for u in meta['provenance']['used']:
+                if 'name' not in u and 'url' in u:
+                    u['name'] = u['url']
+            prov = Activity(data=meta['provenance'])
+            prov.executed('https://github.com/Sage-Bionetworks/tcgaImport')
+
+        else:
+            prov=None
+        log('\tUploading:%s' %entity.name)
+        entity = syn.store(entity, activity=prov)
+        log('\tCreated/Updated: **** %s ****' %entity.id)
+
+
+
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("src", help="Scan directory", default=None)
@@ -47,42 +93,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     syn = synapseclient.login()
-    
-    for a in glob(os.path.join( args.src, "*.json")):
-        log( "Loading:" + a )
-        with open(a) as handle:
-            meta = json.load(handle)
-        dpath = re.sub(r'.json$', '', a)
-        #Skip the rest of the loop if data file is empty or we are not doing the current acronyms
-        if os.stat(dpath).st_size==0 or (args.acronym != meta['annotations']['acronym'] and args.acronym is not None):
-            continue
+
+    p=Pool(5)
+    p.map(loadOneSample, glob(os.path.join( args.src, "*.json")))
         
-        parentId= getParentFolder(syn, args.project, meta)
-        #Determine if we are updating an existing file and if we should update based on md5
-        query = "select id from entity where parentId=='%s' and name=='%s'" % (parentId, meta['name'])
-        res = list(syn.chunkedQuery(query))
-        if len(res) != 0:
-            tmp_ent = syn.get(res[0]['entity.id'], downloadFile=False)
-            upload = (tmp_ent.md5 != meta['md5'])
-            log( "\tFound: %s and upload (MD5 doesn't match)= %s" %(tmp_ent.id, upload))
-        else:
-            log("Not found:" + meta['name'])
-            upload = True
-        #Prepare the entity for upload
-        if upload and args.push: 
-            entity = File(dpath, name=meta['name'], parentId=parentId, annotations=meta['annotations'])
-            if 'provenance' in meta:
-                #Fix labels for urls
-                for u in meta['provenance']['used']:
-                    if 'name' not in u and 'url' in u:
-                        u['name'] = u['url']
-                prov = Activity(data=meta['provenance'])
-                prov.executed('https://github.com/Sage-Bionetworks/tcgaImport')
-
-            else:
-                prov=None
-            log('\tUploading:%s' %entity.name)
-            entity = syn.store(entity, activity=prov)
-            log('\tCreated/Updated: **** %s ****' %entity.id)
-
 
