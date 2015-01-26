@@ -6,6 +6,7 @@ from argparse import ArgumentParser
 import json
 import sys
 import logging
+import time
 
 logging.basicConfig(level=logging.INFO)
 
@@ -39,30 +40,33 @@ if __name__ == "__main__":
     allSynapseFiles = getAllSynapseFiles(args.project)
 
     for basename in basename_list:
-        logging.info("Checking: %s" % (basename))
-        basename_platform_alias = tcgaImport.get_basename_platform(basename)
-        logging.info(basename_platform_alias)
-        conf = tcgaImport.getBaseBuildConf(basename, basename_platform_alias, "./")
-        request = conf.buildRequest()
+        try:
+            logging.info("Checking: %s" % (basename))
+            basename_platform_alias = tcgaImport.get_basename_platform(basename)
+            logging.info(basename_platform_alias)
+            conf = tcgaImport.getBaseBuildConf(basename, basename_platform_alias, "./")
+            request = conf.buildRequest()
         
-        for subtypeName, subtypeData in tcgaImport.tcgaConfig[basename_platform_alias].dataSubTypes.items():
-            filename = subtypeData['nameGen'](basename)
-            entity_id = allSynapseFiles.get(filename)
-            if entity_id is None:
-                handle.write("MISSING: %s\n" % (basename)) 
-                #We have already notified that basename is missing skip rest of subtypes
-                break
-            else:
-                prov = syn.getProvenance(entity_id)
-                #Filter out only used not executed items
-                prov = [x['url'] for x in prov['used'] if not x.get('wasExecuted', False)]
-                logging.info("Provenance: %s" % (prov))
-                req_elems = [x['url'] for x in request['provenance']['used']]
-                if set(prov)==set(req_elems):
-                    handle.write("READY: %s\n" % (basename)) 
-                else:
-                    logging.info("Not all used archives Found: %s" ','.join(set(req_elems) - set(prov)))
-                    handle.write("UPDATE: %s\n" % (basename))
-                     #We have already notified that basename needs to be updated skip rest of subtypes
+            for subtypeName, subtypeData in tcgaImport.tcgaConfig[basename_platform_alias].dataSubTypes.items():
+                filename = subtypeData['nameGen'](basename)
+                entity_id = allSynapseFiles.get(filename)
+                if entity_id is None:
+                    handle.write("MISSING: %s\n" % (basename)) 
+                    #We have already notified that basename is missing skip rest of subtypes
                     break
+                else:
+                    prov = syn.getProvenance(entity_id)
+                    #Filter out only used not executed items
+                    prov = [x['url'] for x in prov['used'] if not x.get('wasExecuted', False)]
+                    logging.info("Provenance: %s" % (prov))
+                    req_elems = [x['url'] for x in request['provenance']['used']]
+                    if set(prov)==set(req_elems):
+                        handle.write("READY: %s\n" % (basename)) 
+                    else:
+                        logging.info("Not all used archives Found: %s" ','.join(set(req_elems) - set(prov)))
+                        handle.write("UPDATE: %s\n" % (basename))
+                        #We have already notified that basename needs to be updated skip rest of subtypes
+                        break
+        except Exception:
+            time.sleep(30)
     handle.close()
