@@ -540,8 +540,9 @@ class TCGAGeneticImport(FileImporter):
             tmp["target"] = target
             return tmp
         
-        colName = [correctKey(colName[i]) for i in range(len(colName))]
+        
         if mode == 2:
+            colName = [correctKey(colName[i]) for i in range(len(colName))]
             secondLine = iHandle.readline()
             colType = secondLine.rstrip().split("\t")
             colType = [correctKey(colType[i]) for i in range(len(colType))]
@@ -549,14 +550,14 @@ class TCGAGeneticImport(FileImporter):
                 self.df = pd.read_csv(iHandle, sep="\t", header=None, names=colType)
                 for i in range(1, len(colType)):
                     if not colType[i] in self.dataSubTypes[dataSubType]['probeFields']:
-                        self.df.drop(colType[i], 1)
+                        self.df = self.df.drop(colType[i], 1)
                 self.df.columns = ["key", colName[1]]
               
             else:
                 tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType)
                 for i in range(1, len(colType)):
                     if not colType[i] in self.dataSubTypes[dataSubType]['probeFields']:
-                        tmp.drop(colType[i], 1)
+                        tmp = tmp.drop(colType[i], 1)
                 tmp.columns=["key", colName[1]]
                 self.df = pd.merge(self.df, tmp, on="key", how="outer")
         else:
@@ -569,15 +570,24 @@ class TCGAGeneticImport(FileImporter):
                 else:
                     tmp["key"] = target
                     self.df = self.df.merge(tmp, how="outer")
-            else:
+            elif mode == 3:
                 if self.df.empty:
                     self.df = tmp
                 else:
-                    print self.df
-                    print tmp
+                    #print self.df
+                    #print tmp
                     self.df = self.df.merge(tmp, how="outer")
-
-
+            else:
+                tmp = tmp.drop("file", 1)
+                for i in range(1, len(colName)):
+                    if not colName[i] in self.dataSubTypes[dataSubType]['probeFields']:
+                        tmp = tmp.drop(colName[i], 1)
+                tmp.columns = ["key", os.path.basename(path).split(".")[0]]
+                if self.df.empty:    
+                    self.df = tmp
+                else:
+                    #print self.df
+                    self.df = pd.merge(self.df, tmp, on="key", how="outer")
         
 def get_field_match(value, fields):
     for f in fields:
@@ -723,7 +733,7 @@ class TCGAMatrixImport(TCGAGeneticImport):
         matrixInfo = dict_merge(matrixInfo, self.config.meta)
         return matrixInfo
 
-
+    
     def fileBuild(self, dataSubType):
         #use the target table to create a name translation table
         #also setup target name enumeration, so they will have columns
@@ -737,16 +747,14 @@ class TCGAMatrixImport(TCGAGeneticImport):
             if len(arr) < 2: continue
             d[arr[0]] = arr[1].strip("\"").strip(".SD")
         f.close()
-
-	#df.columns = [d[c] for c in df.columns]
-	#df.as_csv(
+        d["key"] = "probes"
+        def correctColumn(key, d):
+            if key in d: return self.translateUUID(d[key])
+            return self.translateUUID(key)
+	self.df.columns = [correctColumn(c, d) for c in self.df.columns]
         #write column header
         matrixFile = open("%s/%s.matrix_file" % (self.work_dir, dataSubType), "w" )
-        header=[d[self.df.columns[i]] for i in range(1, len(self.df.columns))]
-        matrixFile.write( "%s\t%s\n" % ( "#probe", "\t".join( header ) ) ) 
-        for index, row in self.df.iterrows():
-            strs = [str(row[i]) for i in range(len(row))]
-            matrixFile.write("%s\n" % ("\t".join(strs)))
+        self.df.to_csv(matrixFile, header=True, sep="\t", index=False)
         matrixFile.close()
         matrixName = self.config.name    
         self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.matrix_file"  % (self.work_dir, dataSubType)) 
