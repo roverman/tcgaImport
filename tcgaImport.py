@@ -284,8 +284,8 @@ class TableReader:
 
 class FileImporter:
     dataSubTypes = {}
-    #Add class variable df, which is the data frame keeping all the data
     df = pd.DataFrame()
+    #Add class variable df, which is the data frame keeping all the data
     excludes = [
          "MANIFEST.txt$",
          "CHANGES_DCC.txt$",
@@ -320,6 +320,7 @@ class FileImporter:
         for o in self.out:
             self.out[o].close()
         for dsubtype in self.dataSubTypes:
+            self.df = pd.DataFrame()
             print "Extracting: ", dsubtype
             filterInclude = None
             filterExclude = None
@@ -1021,7 +1022,7 @@ class SNP6Import(TCGASegmentImport):
         'cna' : { 
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
-            'probeFields' : ['seg.mean'],
+            'probeFields' : ['seg.mean', 'Segment_Mean'],
             'fileInclude' : r'^.*\.hg19.seg.txt$',
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.hg19.cna.bed" % (x)
@@ -1029,7 +1030,7 @@ class SNP6Import(TCGASegmentImport):
         'cna_nocnv' : {
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
-            'probeFields' : ['seg.mean'],
+            'probeFields' : ['seg.mean',  'Segment_Mean'],
             'fileInclude' : r'^.*\.nocnv_hg19.seg.txt$',
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.hg19.cna_nocnv.bed" % (x)
@@ -1055,56 +1056,45 @@ class SNP6Import(TCGASegmentImport):
     def fileScan(self, path, dataSubType):
         handle = open(path)
         colName = None
-        for line in handle:
-            if colName is None:
-                colName = line.rstrip().split("\t")                     
-                for i, col in enumerate(colName):
-                    if commonMap.has_key( col ):
-                        colName[i] = commonMap[ col ]
-            else:
-                tmp = line.rstrip().split("\t")
-                out = {}
-                for i in range(1, len(colName)):
-                    out[ colName[i] ] = tmp[i]
-                self.emit( tmp[0], out, dataSubType )
+        line = handle.readline()
+        colName = line.rstrip().split("\t")                     
+        for i, col in enumerate(colName):
+            if commonMap.has_key( col ):
+                colName[i] = commonMap[ col ]
+        colName[0] = "key"
+        startField  = ["loc.start", "Start"]
+        endField    = ["loc.end", "End"]
+        valField    = self.dataSubTypes[dataSubType]['probeFields']
+        chromeField = ["chrom", "Chromosome"]
+        tmp = pd.read_csv(handle, sep="\t", header=None, names=colName)
+        for col in colName:
+            #print col
+            if col in startField: start = col
+            elif col in endField: end = col
+            elif col in valField : val = col
+            elif col in chromeField: chrom = col
+        print chrom, start, end, val
+        tmp2 = pd.concat([tmp[chrom], tmp[start], tmp[end], tmp["key"], tmp[val]], axis=1)
+        tmp2.columns=["Chrom", "Start", "End", "Key", "Val"]
+        if self.df.empty:
+            self.df = tmp2
+        else:
+            self.df = self.df.append(tmp2)
         handle.close()
     
     def fileBuild(self, dataSubType):
         tmap = self.getTargetMap()  
-        
-        subprocess.call("sort -k 1 %s/%s > %s/%s.sort" % (self.work_dir, dataSubType, self.work_dir, dataSubType), shell=True)                
-        handle = TableReader(self.work_dir + "/%s.sort" % (dataSubType))
-
-        segFile = None
-        curName = None
-        curData = {}
-        missingCount = 0
-
-        startField  = ["loc.start", "Start"]
-        endField    = ["loc.end", "End"]
-        valField    = [self.dataSubTypes[dataSubType]['probeFields'][0], "Segment_Mean"]
-        chromeField = ["chrom", "Chromosome"]
-            
-        segFile = None
-        sHandle = handle
-        for key, value in sHandle:
-            if segFile is None:
-                segFile = open("%s/%s.out"  % (self.work_dir, dataSubType), "w")
-            try:
-                curName = self.translateUUID(tmap[key])
-                if curName is not None:
-                    chrom = get_field_match(value, chromeField).lower()
-                    if not chrom.startswith("chr"):
-                        chrom = "chr" + chrom
-                    chrom = chrom.upper().replace("CHR", "chr")
-                    segFile.write( "%s\t%s\t%s\t%s\t%s\n" % ( 
-                        chrom, get_field_match(value, startField), 
-                        get_field_match(value, endField), 
-                        curName, get_field_match(value, valField ) ) 
-                    )
-            except KeyError:
-                self.addError( "TargetInfo Not Found: %s" % (key))
-            
+        def convertKey(key):
+            if not key in tmap: return self.translateUUID(key)
+            return self.translateUUID(tmap[key])
+        self.df["Key"] = self.df["Key"].apply(convertKey)
+        def correctChrom(key):
+            if not key.startswith("chr"): 
+                key = "chr" + str(key)
+            return key.upper().replace("CHR", "chr")
+        self.df["Chrom"] = self.df["Chrom"].apply(correctChrom)
+        segFile = open("%s/%s.out"  % (self.work_dir, dataSubType), "w")
+        self.df.to_csv(segFile, index=False, header=False, sep="\t")     
         segFile.close()
         meta = self.getMeta(self.config.name + ".hg19", dataSubType)
         meta['assembly'] = { "@id" : 'hg19' }
