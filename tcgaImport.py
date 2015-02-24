@@ -547,19 +547,14 @@ class TCGAGeneticImport(FileImporter):
             secondLine = iHandle.readline()
             colType = secondLine.rstrip().split("\t")
             colType = [correctKey(colType[i]) for i in range(len(colType))]
-            if self.df.empty:
-                self.df = pd.read_csv(iHandle, sep="\t", header=None, names=colType)
-                for i in range(1, len(colType)):
-                    if not colType[i] in self.dataSubTypes[dataSubType]['probeFields']:
-                        self.df = self.df.drop(colType[i], 1)
-                self.df.columns = ["key", colName[1]]
-              
-            else:
-                tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType)
-                for i in range(1, len(colType)):
+            tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType)
+            for i in range(1, len(colType)):
                     if not colType[i] in self.dataSubTypes[dataSubType]['probeFields']:
                         tmp = tmp.drop(colType[i], 1)
-                tmp.columns=["key", colName[1]]
+            tmp.columns = ["key", colName[1]]
+            if self.df.empty:
+                self.df = tmp              
+            else:
                 self.df = pd.merge(self.df, tmp, on="key", how="outer")
         else:
             tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName)
@@ -739,7 +734,7 @@ class TCGAMatrixImport(TCGAGeneticImport):
         #use the target table to create a name translation table
         #also setup target name enumeration, so they will have columns
         #numbers 
-
+        
         matrixFile = None
         f=open(self.work_dir +"/targets", "r")
         d = dict()
@@ -753,9 +748,9 @@ class TCGAMatrixImport(TCGAGeneticImport):
             if key in d: return self.translateUUID(d[key])
             return self.translateUUID(key)
 	self.df.columns = [correctColumn(c, d) for c in self.df.columns]
-        #write column header
+        self.df.dropna(how="all", inplace=True)
         matrixFile = open("%s/%s.matrix_file" % (self.work_dir, dataSubType), "w" )
-        self.df.to_csv(matrixFile, header=True, sep="\t", index=False)
+        self.df.to_csv(matrixFile, header=True, sep="\t", index=False, float_format="%.4f")
         matrixFile.close()
         matrixName = self.config.name    
         self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.matrix_file"  % (self.work_dir, dataSubType)) 
@@ -1073,7 +1068,7 @@ class SNP6Import(TCGASegmentImport):
             elif col in endField: end = col
             elif col in valField : val = col
             elif col in chromeField: chrom = col
-        print chrom, start, end, val
+        #print chrom, start, end, val
         tmp2 = pd.concat([tmp[chrom], tmp[start], tmp[end], tmp["key"], tmp[val]], axis=1)
         tmp2.columns=["Chrom", "Start", "End", "Key", "Val"]
         if self.df.empty:
@@ -1226,7 +1221,7 @@ class HumanMethylation450(TCGAMatrixImport):
             'probeMap' :  'illuminaHumanMethylation450',
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
-            'fileExclude' : '.*.adf.txt',
+            'fileExclude' : '.*.adf.txt|^.*idf.txt|^.*sdrf.txt|targets$',
             'probeFields' :  ['Beta_value', 'Beta_Value'],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.betaValue.tsv" % (x)
@@ -1241,33 +1236,22 @@ class HumanMethylation450(TCGAMatrixImport):
         the type of data being emited
         """
         iHandle = open(path)
-        mode = None
-        #modes
-        #1 - two col header matrix file
-        target = None
-        colName = None
-        colType = None
         line = iHandle.readline()
-        colName = line.rstrip().split("\t")                     
-        if colName[0] == "Hybridization REF" or colName[0] == "Sample REF":
-            mode=1                    
-        for i in range(len(colName)):
-            if commonMap.has_key( colName[i] ):
-                colName[i] = commonMap[ colName[i] ]
+        key = line.rstrip().split("\t")[1]
         line = iHandle.readline()
-        colType=line.rstrip().split("\t")
-        for i in range(len(colType)):
-            if commonMap.has_key( colType[i] ):
-                colType[i] = commonMap[ colType[i] ]
-        self.df = pd.read_csv(iHandle, sep="\t", header=None, names=colType)
-        dfs = []
+        colName = line.rstrip().split("\t")
+        colName[0] = "key"              
+        tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName)
         for col in colName[1:]:
-            tmp = self.df
-            tmp["key"] = col
-            dfs.append(tmp)
-        merged = concat(dfs)
-        self.df = merged
-         
+            #print col
+            if not col in self.dataSubTypes[dataSubType]['probeFields']:
+                tmp = tmp.drop(col, 1)
+        tmp.columns = ["key", key]
+        if self.df.empty:
+            self.df = tmp
+        else: 
+            self.df = pd.merge(self.df, tmp, on="key", how="outer")
+        
 class Illumina_RNASeq(TCGAMatrixImport):
     dataSubTypes = {
         'geneExp' : {
