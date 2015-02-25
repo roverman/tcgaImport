@@ -10,7 +10,7 @@ if sys.argv[1].endswith(".tsv"):
     df = pd.read_csv(sys.argv[1], sep="\t", header=0, index_col=0)
     #print df
     handle = open(sys.argv[2],"r")
-    keys = handle.readline().split("\t")
+    keys = handle.readline().rstrip().split("\t")
     rNum=1
     for line in handle:
         arr = line.rstrip().split("\t")
@@ -21,15 +21,9 @@ if sys.argv[1].endswith(".tsv"):
                 if not keys[i] in df.columns:
                     print "Difference: " + keys[i] + " is not found!"
                 else:
-                    if isinstance(arr[i], float):
-                        val = float(arr[i])
-                    else:
-                        print arr[i] 
-                        val = float('nan')
+                    val = round(float(arr[i]), 4)
                     if val != df[keys[i]][arr[0]]:
                         print "Difference at row " + arr[0] + " column " + keys[i] + ": " + str(df[keys[i]][arr[0]]) + "\t" + str(val)
-                    else:
-                        print "Match"
                 rNum += 1
     handle.close()
 elif sys.argv[1].endswith(".bed"):
