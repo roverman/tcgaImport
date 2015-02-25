@@ -27,15 +27,27 @@ if sys.argv[1].endswith(".tsv"):
                 rNum += 1
     handle.close()
 elif sys.argv[1].endswith(".bed"):
-    s = set()
+    d = dict()
     handle = open(sys.argv[1], "r")
     for line in handle:
-        s.add(line.rstrip())
+        arr = line.rstrip().split("\t")
+        if len(arr) < 5: continue
+        key = arr[0] + "\t" + arr[1] + "\t" + arr[2] + "\t" + arr[3]
+        if key in d: 
+            print key
+        else:
+            d[key] = arr[4]
     handle.close()
     handle = open(sys.argv[2], "r")
     for line in handle:
-        if not line.rstrip() in s:
-            print "Difference :" + line.rstrip()
+        arr = line.rstrip().split("\t")
+        if len(arr) < 5: continue
+        key = arr[0] + "\t" + arr[1] + "\t" + arr[2] + "\t" + arr[3]
+        if not key in d:
+            print "Difference: " + key + " is not found"
+        else:
+            if float(arr[4]) != float(d[key]):
+                print "Difference: " + key + " " + d[key] + " " + arr[4]
     handle.close()
 
 
