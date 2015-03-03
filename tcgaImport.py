@@ -1110,6 +1110,7 @@ class CGH415K_G4124A(TCGASegmentImport):
             'sampleMap' : 'tcga.iddag',
             'chromeField' : 'Chromosome',
             'dataType' : 'genomicSegment',
+            'fileExclude' : r'targets',
             'endField' : 'End',
             'probeFields' : ['Segment_Mean'],
             'startField' : 'Start',
@@ -1159,6 +1160,7 @@ class HuEx1_0stv2(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
             'probeFields' : ['Signal'],
+            'fileExclude' : '.*.adf.txt|^.*idf.txt|^.*sdrf.txt|targets$',
             'fileInclude' : '^.*gene.txt$|^.*sdrf.txt$',
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.miRNAExp.tsv" % (x)
