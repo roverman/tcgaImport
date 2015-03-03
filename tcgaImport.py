@@ -551,7 +551,9 @@ class TCGAGeneticImport(FileImporter):
             for i in range(1, len(colType)):
                     if not colType[i] in self.dataSubTypes[dataSubType]['probeFields']:
                         tmp = tmp.drop(colType[i], 1)
+            print tmp.columns
             tmp.columns = ["key", colName[1]]
+            tmp = tmp.dropna()
             if self.df.empty:
                 self.df = tmp              
             else:
@@ -599,6 +601,7 @@ class TCGASegmentImport(TCGAGeneticImport):
         it emits these values to a handle, using the 'targets' and 'probes' string to identify 
         the type of data being emited
         """
+
         iHandle = open(path)
         mode = None
         #modes
@@ -610,25 +613,29 @@ class TCGASegmentImport(TCGAGeneticImport):
         colName = iHandle.readline().rstrip().split("\t")
         if colName[0] == "Chromosome" or colName[0] == "chromosome":
             mode = 1
-            target = os.path.basenmae( path ).split('.')[0]
+            target = os.path.basename( path ).split('.')[0]
         elif colName[1] == "chrom":
             mode = 2
-        colName = [correctKey(colName[i]) for i in range(len(colName))]
-                
+        startField  = ["loc.start", "Start"]
+        endField    = ["loc.end", "End"]
+        valField    = self.dataSubTypes[dataSubType]['probeFields']
+        chromeField = ["chrom", "Chromosome"]
         tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName)
-        tmp['file'] = os.path.basename(path)
-        if mode==1:
-            if self.df.empty:
-                tmp['key'] = target
-                self.df = tmp
-            else:
-                tmp['key'] = target
-                self.df = self.df.merge(tmp, how="outer")
-        elif mode == 2:
-            if self.df == None:
-                self.df = tmp
-            else:
-                self.df = self.df.merge(tmp, how="outer")
+        tmp['key'] = os.path.basename(path)
+        for col in colName:
+            #print col
+            if col in startField: start = col
+            elif col in endField: end = col
+            elif col in valField : val = col
+            elif col in chromeField: chrom = col
+        #print chrom, start, end, val
+        tmp2 = pd.concat([tmp[chrom], tmp[start], tmp[end], tmp["key"], tmp[val]], axis=1)
+        tmp2.columns=["Chrom", "Start", "End", "Key", "Val"]
+        if self.df.empty:
+            self.df = tmp2
+        else:
+            self.df = self.df.append(tmp2)
+        iHandle.close()
 
     
     def getMeta(self, name, dataSubType):
@@ -656,52 +663,30 @@ class TCGASegmentImport(TCGAGeneticImport):
         #use the target table to create a name translation table
         #also setup target name enumeration, so they will have columns
         #numbers
-
-        tTrans = self.getTargetMap() 
+         
         
-        segFile = None
-        curName = None
+        tmap = self.getTargetMap()
+        segFile = open("%s/%s.segment_file"  % (self.work_dir, dataSubType), "w")
+        def convertKey(key):
+            if not key in tmap:
+                return self.translateUUID(key)
+            return self.translateUUID(tmap[key])
         
-        curData = {}
-        missingCount = 0
-
-        startField  = ["loc.start", "Start"]
-        endField    = ["loc.end", "End"]
-        valField    = ["seg.mean", "Segment_Mean"]
-        chromeField = ["chrom", "Chromosome"]
-        
-        segFile = None
-
-        for index, row in self.df.iterrows():
-            if segFile is None:
-                segFile = open("%s/%s.segment_file"  % (self.work_dir, dataSubType), "w")
-            try:
-                curName = self.translateUUID(tTrans[key]) # "-".join( tTrans[ key ].split('-')[0:4] )
-                if curName is not None:
-                    try:
-                        chrom = get_field_match_df(row, chromeField).lower()
-                        if not chrom.startswith("chr"):
-                            chrom = "chr" + chrom
-                        chrom = chrom.upper().replace("CHR", "chr")
-                        #segFile.write( "%s\t%s\t%s\t%s\t.\t%s\n" % ( curName, chrom, int(value[ startField ])+1, value[ endField ], value[ valField ] ) )
-                        segFile.write( "%s\t%s\t%s\t%s\t%s\n" % ( 
-                            chrom, 
-                            int(get_field_match_df(row, startField))-1, 
-                            get_field_match_df(row, endField), curName, 
-                            get_field_match_df( row, valField ) ) 
-                        )
-                    except KeyError:
-                         self.addError( "Field error: %s" % (str(value)))
-            except KeyError:
-                self.addError( "TargetInfo Not Found: %s" % (key))
-            
+        self.df["Key"] = self.df["Key"].apply(convertKey)
+        self.df = self.df.query(" Key != 'NA' ")
+        def correctChrom(key):
+            if not key.startswith("chr"): 
+                key = "chr" + str(key)
+            return key.upper().replace("CHR", "chr")
+        self.df["Chrom"] = self.df["Chrom"].apply(correctChrom)
+        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4f")     
         segFile.close()
         matrixName = self.config.name
 
         self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.segment_file"  % (self.work_dir, dataSubType) )
 
 def dict_merge(x, y):
-    print "dict", x, y
+    #print "dict", x, y
     result = dict(x)
     for k,v in y.iteritems():
         if k in result:
@@ -748,7 +733,7 @@ class TCGAMatrixImport(TCGAGeneticImport):
             if key in d: return self.translateUUID(d[key])
             return self.translateUUID(key)
 	self.df.columns = [correctColumn(c, d) for c in self.df.columns]
-        self.df.dropna(how="all", inplace=True)
+        #self.df.dropna(how="all", inplace=True)
         matrixFile = open("%s/%s.matrix_file" % (self.work_dir, dataSubType), "w" )
         self.df.to_csv(matrixFile, header=True, sep="\t", index=False, float_format="%.4f")
         matrixFile.close()
@@ -1089,7 +1074,7 @@ class SNP6Import(TCGASegmentImport):
             return key.upper().replace("CHR", "chr")
         self.df["Chrom"] = self.df["Chrom"].apply(correctChrom)
         segFile = open("%s/%s.out"  % (self.work_dir, dataSubType), "w")
-        self.df.to_csv(segFile, index=False, header=False, sep="\t")     
+        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4f")     
         segFile.close()
         meta = self.getMeta(self.config.name + ".hg19", dataSubType)
         meta['assembly'] = { "@id" : 'hg19' }
@@ -1141,6 +1126,7 @@ class IlluminaHiSeq_DNASeqC(TCGASegmentImport):
             'dataType' : 'genomicSegment',
             'endField' : 'End',
             'probeFields' : ['Segment_Mean'],
+            'fileExclude' : r'targets',
             'startField' : 'Start',
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
@@ -1151,7 +1137,7 @@ class IlluminaHiSeq_DNASeqC(TCGASegmentImport):
         out = self.config.translateUUID(uuid)
         #censor out normal ids
         if re.search(r'^TCGA-..-....-1', out):
-            return None
+            return "NA"
         return out
 
 class HT_HGU133A(TCGAMatrixImport):
@@ -1207,7 +1193,7 @@ class HumanMethylation27(TCGAMatrixImport):
             'probeMap' : 'illuminaMethyl27K_gpl8490',
             'sampleMap' :  'tcga.iddag',
             'dataType' : 'genomicMatrix',
-            'fileExclude' : '.*.adf.txt',
+            'fileExclude' : '.*.adf.txt|^.*idf.txt|^.*sdrf.txt|targets$',
             'probeFields' : ['Beta_Value', 'Beta_value'],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.betaValue.tsv" % (x)
@@ -1247,9 +1233,12 @@ class HumanMethylation450(TCGAMatrixImport):
             if not col in self.dataSubTypes[dataSubType]['probeFields']:
                 tmp = tmp.drop(col, 1)
         tmp.columns = ["key", key]
+        tmp = tmp.dropna()
         if self.df.empty:
             self.df = tmp
-        else: 
+        else:
+            if key in self.df.columns:
+                self.df=self.df.drop(key, 1)
             self.df = pd.merge(self.df, tmp, on="key", how="outer")
         
 class Illumina_RNASeq(TCGAMatrixImport):
