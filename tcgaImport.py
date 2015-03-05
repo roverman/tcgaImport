@@ -551,7 +551,7 @@ class TCGAGeneticImport(FileImporter):
             for i in range(1, len(colType)):
                     if not colType[i] in self.dataSubTypes[dataSubType]['probeFields']:
                         tmp = tmp.drop(colType[i], 1)
-            print tmp.columns
+            #print tmp.columns
             tmp.columns = ["key", colName[1]]
             tmp = tmp.dropna()
             if self.df.empty:
@@ -602,7 +602,7 @@ class TCGASegmentImport(TCGAGeneticImport):
         the type of data being emited
         """
 
-        iHandle = open(path)
+        iHandle = open(path,'U')
         mode = None
         #modes
         #1 - segmentFile - one sample per file/no sample info inside file
@@ -619,6 +619,9 @@ class TCGASegmentImport(TCGAGeneticImport):
         startField  = ["loc.start", "Start"]
         endField    = ["loc.end", "End"]
         valField    = self.dataSubTypes[dataSubType]['probeFields']
+        #print path
+        #print colName
+        #print valField
         chromeField = ["chrom", "Chromosome"]
         tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName)
         tmp['key'] = os.path.basename(path)
@@ -675,7 +678,7 @@ class TCGASegmentImport(TCGAGeneticImport):
         self.df["Key"] = self.df["Key"].apply(convertKey)
         self.df = self.df.query(" Key != 'NA' ")
         def correctChrom(key):
-            if not key.startswith("chr"): 
+            if not str(key).startswith("chr"): 
                 key = "chr" + str(key)
             return key.upper().replace("CHR", "chr")
         self.df["Chrom"] = self.df["Chrom"].apply(correctChrom)
@@ -978,6 +981,7 @@ class AgilentImport(TCGAMatrixImport):
             'probeMap' : 'hugo',
             'sampleMap' : 'tcga.iddag',
             'dataType'  : 'genomicMatrix',
+            'fileExclude' : r'targets',
             'probeFields' : ['log2 lowess normalized (cy5/cy3) collapsed by gene symbol'],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.geneExp.tsv" % (x)
@@ -991,6 +995,7 @@ class CGH1x1mImport(TCGASegmentImport):
             "sampleMap" : 'tcga.iddag',
             "dataType" : 'genomicSegment',
             "probeFields" : ['seg.mean'],
+            'fileExclude' : r'targets',
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
         }
@@ -1098,7 +1103,8 @@ class CGH244AImport(TCGASegmentImport):
         'cna' : {
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
-            'probeFields' : ['Segment_Mean'],
+            'fileExclude' : r'targets',
+            'probeFields' : ['Segment_Mean','seg.mean'],
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
         }
@@ -1147,7 +1153,8 @@ class HT_HGU133A(TCGAMatrixImport):
             'probeMap' : 'affyU133a',
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
-            'probeFields' : ['Signal'],
+            'fileExclude' : r'targets',
+            'probeFields' : ['Signal', 'Value'],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.geneExp.tsv" % (x)
         }
@@ -1166,12 +1173,30 @@ class HuEx1_0stv2(TCGAMatrixImport):
             'nameGen' : lambda x : "%s.miRNAExp.tsv" % (x)
         }
     }
+    def fileScan(self, path, dataSubType):
+        iHandle = open(path, "U")
+        firstLine = iHandle.readline()
+        colName = firstLine.rstrip().split("\t")
+        secondLine = iHandle.readline()
+        colType = secondLine.rstrip().split("\t")
+        tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType)
+        for i in range(1, len(colType)):
+            if not colType[i] in self.dataSubTypes[dataSubType]['probeFields']:
+                tmp = tmp.drop(colType[i], 1)
+        colName[0] = "key"
+        tmp.columns = colName
+        tmp = tmp.dropna()
+        if self.df.empty:
+            self.df = tmp              
+        else:
+            self.df = pd.merge(self.df, tmp, on="key", how="outer")
 
 class Human1MDuoImport(TCGASegmentImport):
     dataSubTypes = {
         'cna' : {
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
+            'fileExclude' : r'targets',
             'probeFields' : ['mean'],
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
@@ -1183,6 +1208,7 @@ class HumanHap550(TCGASegmentImport):
         'cna' : {
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
+            'fileExclude' : r'targets',
             'probeFields' : ['mean'],
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
