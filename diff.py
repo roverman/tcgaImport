@@ -21,9 +21,13 @@ if sys.argv[1].endswith(".tsv"):
                 if not keys[i] in df.columns:
                     print "Difference: " + keys[i] + " is not found!"
                 else:
-                    val = round(float(arr[i]), 4)
+                    if arr[i] == "NA":
+                        val = "nan"
+                    else:
+                        val = round(float(arr[i]), 4)
                     if val != df[keys[i]][arr[0]]:
                         print "Difference at row " + arr[0] + " column " + keys[i] + ": " + str(df[keys[i]][arr[0]]) + "\t" + str(val)
+                        sys.exit()
                 rNum += 1
     handle.close()
 elif sys.argv[1].endswith(".bed"):
