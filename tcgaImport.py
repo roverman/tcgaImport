@@ -1300,6 +1300,22 @@ class Illumina_RNASeqV2(TCGAMatrixImport):
             'nameGen' : lambda x : "%s.isoformExp.tsv" % (x)
         }
     }
+    def fileScan(self, path, dataSubType):
+        
+        iHandle = open(path, 'U')
+        fname = os.path.basename(path)
+        firstLine = iHandle.readline()
+        colName = firstLine.rstrip().split("\t")
+        tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName)
+        for i in range(1, len(colName)):
+            if not colName[i] in self.dataSubTypes[dataSubType]['probeFields']:
+                tmp = tmp.drop(colName[i], 1)
+        tmp.columns = ["key", fname]
+        if self.df.empty:
+            self.df = tmp
+        else:
+            self.df = pd.merge(self.df, tmp, on="key", how="outer")
+        iHandle.close()		
 
 class IlluminaHiSeq_RNASeq(TCGAMatrixImport):
     dataSubTypes = {
