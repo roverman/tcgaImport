@@ -284,7 +284,6 @@ class TableReader:
 
 class FileImporter:
     dataSubTypes = {}
-    df = pd.DataFrame()
     #Add class variable df, which is the data frame keeping all the data
     excludes = [
          "MANIFEST.txt$",
@@ -300,7 +299,8 @@ class FileImporter:
     def __init__(self, config, build_req):
         self.config = config
         self.build_req = build_req
-        
+        self.df = pd.DataFrame()
+
     def extractTars(self):  
         if not os.path.exists(self.config.workdir_base):
             os.makedirs(self.config.workdir_base)      
@@ -407,10 +407,7 @@ idfMap = {
     "Person Affiliation" : "dataProducer",
     "Date of Experiment" : "experimentalDate"
 }
-def correctKey(name):
-    if commonMap.has_key( name ):
-        return commonMap[ name ]
-    return name
+
 class TCGAGeneticImport(FileImporter):      
     
     def mageScan(self, path):
@@ -535,62 +532,58 @@ class TCGAGeneticImport(FileImporter):
         elif colName[1] == "chrom":
             mode = 3
             target = os.path.basename( path ).split('.')[0]
-
-        def addTargetColumn(df, target):
-            tmp = df
-            tmp["target"] = target
-            return tmp
-        
         
         if mode == 2:
-            colName = [correctKey(colName[i]) for i in range(len(colName))]
+            colName = [commonMap.get(colName[i], colName[i]) for i in range(len(colName))]
             secondLine = iHandle.readline()
             colType = secondLine.rstrip().split("\t")
-            colType = [correctKey(colType[i]) for i in range(len(colType))]
+            colType = [commonMap.get(colType[i], colType[i]) for i in range(len(colType))]
             tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType)
-            for i in range(1, len(colType)):
-                    if not colType[i] in self.dataSubTypes[dataSubType]['probeFields']:
-                        tmp = tmp.drop(colType[i], 1)
+            wantedProbeFields = self.dataSubTypes[dataSubType]['probeFields']
+            idx = [col in wantedProbeFields for col in colType]
+            tmp = tmp[idx]
             #print tmp.columns
             tmp.columns = ["key", colName[1]]
             tmp = tmp.dropna()
-            if self.df.empty:
-                self.df = tmp              
+            if self.df.empty: 
+                self.df = tmp
             else:
                 self.df = pd.merge(self.df, tmp, on="key", how="outer")
         else:
             tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName)
             tmp["file"] = os.path.basename(path)
             if mode==1:
+                tmp["key"] = target
                 if self.df.empty:
-                    tmp["key"] = target
                     self.df = tmp
                 else:
-                    tmp["key"] = target
                     self.df = self.df.merge(tmp, how="outer")
             elif mode == 3:
                 if self.df.empty:
                     self.df = tmp
                 else:
-                    #print self.df
-                    #print tmp
-                    self.df = self.df.merge(tmp, how="outer")
+                self.df = self.df.merge(tmp, how="outer")
             else:
                 tmp = tmp.drop("file", 1)
-                for i in range(1, len(colName)):
-                    if not colName[i] in self.dataSubTypes[dataSubType]['probeFields']:
-                        tmp = tmp.drop(colName[i], 1)
+                wantedProbeFields = self.dataSubTypes[dataSubType]['probeFields']
+                idx = [col in wantedProbeFields for col in colType]
+                tmp = tmp[idx]
                 tmp.columns = ["key", os.path.basename(path).split(".")[0]]
                 if self.df.empty:    
                     self.df = tmp
                 else:
                     #print self.df
                     self.df = pd.merge(self.df, tmp, on="key", how="outer")
-        
-def get_field_match(value, fields):
-    for f in fields:
-        if f in value:
-            return value[f]
+
+    def convertKey(key, tmap):
+        if not key in tmap:
+            return self.translateUUID(key)
+        return self.translateUUID(tmap[key])
+
+def correctChrom(key):
+    if not str(key).startswith("chr"): 
+        key = "chr" + str(key)
+    return key.upper().replace("CHR", "chr")
 
 class TCGASegmentImport(TCGAGeneticImport):
 
@@ -619,19 +612,14 @@ class TCGASegmentImport(TCGAGeneticImport):
         startField  = ["loc.start", "Start"]
         endField    = ["loc.end", "End"]
         valField    = self.dataSubTypes[dataSubType]['probeFields']
-        #print path
-        #print colName
-        #print valField
         chromeField = ["chrom", "Chromosome"]
         tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName)
         tmp['key'] = os.path.basename(path)
         for col in colName:
-            #print col
             if col in startField: start = col
             elif col in endField: end = col
             elif col in valField : val = col
             elif col in chromeField: chrom = col
-        #print chrom, start, end, val
         tmp2 = pd.concat([tmp[chrom], tmp[start], tmp[end], tmp["key"], tmp[val]], axis=1)
         tmp2.columns=["Chrom", "Start", "End", "Key", "Val"]
         if self.df.empty:
@@ -640,7 +628,6 @@ class TCGASegmentImport(TCGAGeneticImport):
             self.df = self.df.append(tmp2)
         iHandle.close()
 
-    
     def getMeta(self, name, dataSubType):
         matrixInfo = { 
             'name' : name + "." + dataSubType + ".bed", 
@@ -654,33 +641,18 @@ class TCGASegmentImport(TCGAGeneticImport):
         }
         matrixInfo = dict_merge(matrixInfo, self.ext_meta)
         matrixInfo = dict_merge(matrixInfo, self.config.meta)
-        print matrixInfo
         return matrixInfo
 
-    def get_field_match_df(row, field):
-        for item in row.columns:
-            if item in field:
-                return row[item]
-        return "N/A"
     def fileBuild(self, dataSubType):
         #use the target table to create a name translation table
         #also setup target name enumeration, so they will have columns
-        #numbers
-         
+        #numbers         
         
         tmap = self.getTargetMap()
         segFile = open("%s/%s.segment_file"  % (self.work_dir, dataSubType), "w")
-        def convertKey(key):
-            if not key in tmap:
-                return self.translateUUID(key)
-            return self.translateUUID(tmap[key])
         
         self.df["Key"] = self.df["Key"].apply(convertKey)
         self.df = self.df.query(" Key != 'NA' ")
-        def correctChrom(key):
-            if not str(key).startswith("chr"): 
-                key = "chr" + str(key)
-            return key.upper().replace("CHR", "chr")
         self.df["Chrom"] = self.df["Chrom"].apply(correctChrom)
         self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4f")     
         segFile.close()
@@ -732,11 +704,7 @@ class TCGAMatrixImport(TCGAGeneticImport):
             d[arr[0]] = arr[1].strip("\"").strip(".SD")
         f.close()
         d["key"] = "probes"
-        def correctColumn(key, d):
-            if key in d: return self.translateUUID(d[key])
-            return self.translateUUID(key)
-	self.df.columns = [correctColumn(c, d) for c in self.df.columns]
-        #self.df.dropna(how="all", inplace=True)
+	self.df.columns = [ translageUUID.get(d[key], self.translateUUID(key)) for key in self.df.columns]
         matrixFile = open("%s/%s.matrix_file" % (self.work_dir, dataSubType), "w" )
         self.df.to_csv(matrixFile, header=True, sep="\t", index=False, float_format="%.4f")
         matrixFile.close()
@@ -1042,10 +1010,8 @@ class SNP6Import(TCGASegmentImport):
         handle = open(path)
         colName = None
         line = handle.readline()
-        colName = line.rstrip().split("\t")                     
-        for i, col in enumerate(colName):
-            if commonMap.has_key( col ):
-                colName[i] = commonMap[ col ]
+        colName = line.rstrip().split("\t")
+        colName = [commonMap.get(col, col) for col in colName]  
         colName[0] = "key"
         startField  = ["loc.start", "Start"]
         endField    = ["loc.end", "End"]
@@ -1144,7 +1110,7 @@ class IlluminaHiSeq_DNASeqC(TCGASegmentImport):
         out = self.config.translateUUID(uuid)
         #censor out normal ids
         if re.search(r'^TCGA-..-....-1', out):
-            return "NA"
+            return ""
         return out
 
 class HT_HGU133A(TCGAMatrixImport):
@@ -1180,9 +1146,9 @@ class HuEx1_0stv2(TCGAMatrixImport):
         secondLine = iHandle.readline()
         colType = secondLine.rstrip().split("\t")
         tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType)
-        for i in range(1, len(colType)):
-            if not colType[i] in self.dataSubTypes[dataSubType]['probeFields']:
-                tmp = tmp.drop(colType[i], 1)
+        wantedFields = self.dataSubTypes[dataSubType]['probeFields']
+        idx = [col in wantedFields for col in colType]
+        tmp = tmp[idx]
         colName[0] = "key"
         tmp.columns = colName
         tmp = tmp.dropna()
@@ -1256,10 +1222,9 @@ class HumanMethylation450(TCGAMatrixImport):
         colName = line.rstrip().split("\t")
         colName[0] = "key"              
         tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName)
-        for col in colName[1:]:
-            #print col
-            if not col in self.dataSubTypes[dataSubType]['probeFields']:
-                tmp = tmp.drop(col, 1)
+        wantedFields = self.dataSubTypes[dataSubType]['probeFields']
+        idx = [col in wantedFields for col in colType]
+        tmp = tmp[idx]
         tmp.columns = ["key", key]
         tmp = tmp.dropna()
         if self.df.empty:
@@ -1307,9 +1272,9 @@ class Illumina_RNASeqV2(TCGAMatrixImport):
         firstLine = iHandle.readline()
         colName = firstLine.rstrip().split("\t")
         tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName)
-        for i in range(1, len(colName)):
-            if not colName[i] in self.dataSubTypes[dataSubType]['probeFields']:
-                tmp = tmp.drop(colName[i], 1)
+        wantedFields = self.dataSubTypes[dataSubType]['probeFields']
+        idx = [col in wantedFields for col in colType]
+        tmp = tmp[idx]
         tmp.columns = ["key", fname]
         if self.df.empty:
             self.df = tmp
