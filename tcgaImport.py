@@ -36,7 +36,10 @@ import pandas as pd
 Net query code
 
 """
-
+def correctChrom(key):
+    if not str(key).startswith("chr"): 
+        key = "chr" + str(key)
+    return key.upper().replace("CHR", "chr")
 class dccwsItem(object):
     baseURL = "http://tcga-data.nci.nih.gov/tcgadccws/GetXML?query="
 
@@ -566,7 +569,7 @@ class TCGAGeneticImport(FileImporter):
             else:
                 tmp = tmp.drop("file", 1)
                 wantedProbeFields = self.dataSubTypes[dataSubType]['probeFields']
-                idx = [col in wantedProbeFields for col in colType]
+                idx = [col in wantedProbeFields for col in tmp.columns]
                 idx = idx[1:]
                 tmp = tmp.ix[:,idx]
                 tmp.columns = [os.path.basename(path).split(".")[0]]
@@ -576,15 +579,11 @@ class TCGAGeneticImport(FileImporter):
                     #print self.df
                     self.df = pd.concat([self.df, tmp], axis=1)
 
-    def convertKey(key, tmap):
+    def convertKey(self, key):
+        tmap = self.getTargetMap()
         if not key in tmap:
             return self.translateUUID(key)
         return self.translateUUID(tmap[key])
-
-def correctChrom(key):
-    if not str(key).startswith("chr"): 
-        key = "chr" + str(key)
-    return key.upper().replace("CHR", "chr")
 
 class TCGASegmentImport(TCGAGeneticImport):
 
@@ -649,10 +648,8 @@ class TCGASegmentImport(TCGAGeneticImport):
         #also setup target name enumeration, so they will have columns
         #numbers         
         
-        tmap = self.getTargetMap()
-        segFile = open("%s/%s.segment_file"  % (self.work_dir, dataSubType), "w")
-        
-        self.df["Key"] = self.df["Key"].apply(convertKey)
+        segFile = open("%s/%s.segment_file"  % (self.work_dir, dataSubType), "w") 
+        self.df["Key"] = self.df["Key"].apply(self.convertKey)
         self.df = self.df.query(" Key != 'NA' ")
         self.df["Chrom"] = self.df["Chrom"].apply(correctChrom)
         self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4f")     
@@ -1017,36 +1014,17 @@ class SNP6Import(TCGASegmentImport):
         colName = line.rstrip().split("\t")
         colName = [commonMap.get(col, col) for col in colName]  
         colName[0] = "key"
-        startField  = ["loc.start", "Start"]
-        endField    = ["loc.end", "End"]
-        valField    = self.dataSubTypes[dataSubType]['probeFields']
-        chromeField = ["chrom", "Chromosome"]
         tmp = pd.read_csv(handle, sep="\t", header=None, names=colName)
-        for col in colName:
-            #print col
-            if col in startField: start = col
-            elif col in endField: end = col
-            elif col in valField : val = col
-            elif col in chromeField: chrom = col
-        #print chrom, start, end, val
-        tmp2 = pd.concat([tmp[chrom], tmp[start], tmp[end], tmp["key"], tmp[val]], axis=1)
-        tmp2.columns=["Chrom", "Start", "End", "Key", "Val"]
+        tmp = tmp.ix[:, ["chrom", "loc.start", "loc.end", "key", "seg.mean"]]
         if self.df.empty:
-            self.df = tmp2
+            self.df = tmp
         else:
-            self.df = self.df.append(tmp2)
+            self.df = self.df.append(tmp)
         handle.close()
     
     def fileBuild(self, dataSubType):
         tmap = self.getTargetMap()  
-        def convertKey(key):
-            if not key in tmap: return self.translateUUID(key)
-            return self.translateUUID(tmap[key])
-        self.df["Key"] = self.df["Key"].apply(convertKey)
-        def correctChrom(key):
-            if not key.startswith("chr"): 
-                key = "chr" + str(key)
-            return key.upper().replace("CHR", "chr")
+        self.df["Key"] = self.df["Key"].apply(self.convertKey)
         self.df["Chrom"] = self.df["Chrom"].apply(correctChrom)
         segFile = open("%s/%s.out"  % (self.work_dir, dataSubType), "w")
         self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4f")     
@@ -1152,6 +1130,7 @@ class HuEx1_0stv2(TCGAMatrixImport):
         tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType, index_col=0)
         wantedFields = self.dataSubTypes[dataSubType]['probeFields']
         idx = [col in wantedFields for col in colType]
+        idx = idx[1:]
         tmp = tmp.ix[:, idx]
         tmp.columns = colName[1:]
         tmp = tmp.dropna()
