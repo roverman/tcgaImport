@@ -33,9 +33,9 @@ def getParentFolder(syn, project, meta):
     if fid is None:
         folder = syn.store(Folder(name=meta['annotations']['acronym'], parentId=project))
         fid = folder.id
-    pid = find_child(syn, fid, meta['platform'])
+    pid = find_child(syn, fid, meta['annotations']['platform'])
     if pid is None:
-        folder = syn.store(Folder(name=meta['platform'], parentId=fid))
+        folder = syn.store(Folder(name=meta['annotations']['platform'], parentId=fid))
         pid = folder.id
     return pid
 
@@ -59,10 +59,10 @@ def loadOneSample(a):
     res = list(syn.chunkedQuery(query))
     if len(res) != 0:
         tmp_ent = syn.get(res[0]['entity.id'], downloadFile=False)
-        upload = (tmp_ent.md5 != meta['md5'])
-        log( "\tFound: %s and upload (MD5 doesn't match)= %s" %(tmp_ent.id, upload))
+        upload = (tmp_ent.md5 != meta['annotations']['md5'])
+        log( "\tFound: %s and upload (MD5 %s match)" %(tmp_ent.id, 'DOESN\'T' if upload else 'does'))
     else:
-        log("Not found:" + meta['name'])
+        log("\tNot found:" + meta['name'])
         upload = True
     #Prepare the entity for upload
     if upload and args.push: 
