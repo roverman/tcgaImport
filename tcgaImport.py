@@ -287,7 +287,6 @@ class TableReader:
 
 class FileImporter:
     dataSubTypes = {}
-    #Add class variable df, which is the data frame keeping all the data
     excludes = [
          "MANIFEST.txt$",
          "CHANGES_DCC.txt$",
@@ -302,7 +301,8 @@ class FileImporter:
     def __init__(self, config, build_req):
         self.config = config
         self.build_req = build_req
-        self.df = pd.DataFrame()
+    	#variable df, which is the data frame keeping all the data, it will be assigned in the run() method
+        self.df = None
 
     def extractTars(self):  
         if not os.path.exists(self.config.workdir_base):
@@ -548,24 +548,15 @@ class TCGAGeneticImport(FileImporter):
             tmp = tmp.ix[:,idx]
             tmp.columns = [colName[1]]
             tmp = tmp.dropna()
-            if self.df.empty: 
-                self.df = tmp
-            else:
-                self.df = pd.concat([self.df, tmp], axis=1)
+            self.df = pd.concat([self.df, tmp], axis=1)
         else:
             tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName)
             tmp["file"] = os.path.basename(path)
             if mode==1:
                 tmp["key"] = target
-                if self.df.empty:
-                    self.df = tmp
-                else:
-                    self.df = pd.concat([self.df,tmp], axis=1)
+                self.df = pd.concat([self.df,tmp], axis=1)
             elif mode == 3:
-                if self.df.empty:
-                    self.df = tmp
-                else:
-                    self.df = pd.concat([self.df, tmp], axis=1)
+                self.df = pd.concat([self.df, tmp], axis=1)
             else:
                 tmp = tmp.drop("file", 1)
                 wantedProbeFields = self.dataSubTypes[dataSubType]['probeFields']
@@ -573,11 +564,7 @@ class TCGAGeneticImport(FileImporter):
                 idx = idx[1:]
                 tmp = tmp.ix[:,idx]
                 tmp.columns = [os.path.basename(path).split(".")[0]]
-                if self.df.empty:    
-                    self.df = tmp
-                else:
-                    #print self.df
-                    self.df = pd.concat([self.df, tmp], axis=1)
+                self.df = pd.concat([self.df, tmp], axis=1)
 
     def convertKey(self, key):
         tmap = self.getTargetMap()
@@ -622,10 +609,7 @@ class TCGASegmentImport(TCGAGeneticImport):
             elif col in chromeField: chrom = col
         tmp2 = pd.concat([tmp[chrom], tmp[start], tmp[end], tmp["key"], tmp[val]], axis=1)
         tmp2.columns=["Chrom", "Start", "End", "Key", "Val"]
-        if self.df.empty:
-            self.df = tmp2
-        else:
-            self.df = self.df.append(tmp2)
+        self.df = self.df.append(tmp2)
         iHandle.close()
 
     def getMeta(self, name, dataSubType):
@@ -1016,16 +1000,13 @@ class SNP6Import(TCGASegmentImport):
         colName[0] = "key"
         tmp = pd.read_csv(handle, sep="\t", header=None, names=colName)
         tmp = tmp.ix[:, ["chrom", "loc.start", "loc.end", "key", "seg.mean"]]
-        if self.df.empty:
-            self.df = tmp
-        else:
-            self.df = self.df.append(tmp)
+        self.df = self.df.append(tmp)
         handle.close()
     
     def fileBuild(self, dataSubType):
         tmap = self.getTargetMap()  
-        self.df["Key"] = self.df["Key"].apply(self.convertKey)
-        self.df["Chrom"] = self.df["Chrom"].apply(correctChrom)
+        self.df["key"] = self.df["key"].apply(self.convertKey)
+        self.df["chrom"] = self.df["chrom"].apply(correctChrom)
         segFile = open("%s/%s.out"  % (self.work_dir, dataSubType), "w")
         self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4f")     
         segFile.close()
@@ -1134,10 +1115,7 @@ class HuEx1_0stv2(TCGAMatrixImport):
         tmp = tmp.ix[:, idx]
         tmp.columns = colName[1:]
         tmp = tmp.dropna()
-        if self.df.empty:
-            self.df = tmp              
-        else:
-            self.df = pd.concat([self.df, tmp], axis=1)
+        self.df = pd.concat([self.df, tmp], axis=1)
 
 class Human1MDuoImport(TCGASegmentImport):
     dataSubTypes = {
@@ -1210,12 +1188,9 @@ class HumanMethylation450(TCGAMatrixImport):
         tmp = tmp.ix[:, idx]
         tmp.columns = [key]
         tmp = tmp.dropna()
-        if self.df.empty:
-            self.df = tmp
-        else:
-            if key in self.df.columns:
-                self.df=self.df.drop(key, 1)
-            self.df = pd.concat([self.df, tmp], axis=1)
+        if not self.df.empty and key in self.df.columns:
+            self.df=self.df.drop(key, 1)
+        self.df = pd.concat([self.df, tmp], axis=1)
         
 class Illumina_RNASeq(TCGAMatrixImport):
     dataSubTypes = {
@@ -1260,10 +1235,7 @@ class Illumina_RNASeqV2(TCGAMatrixImport):
         idx = idx[1:]
         tmp = tmp[:,idx]
         tmp.columns = [fname]
-        if self.df.empty:
-            self.df = tmp
-        else:
-            self.df = pd.concat([self.df, tmp], axis=1)
+        self.df = pd.concat([self.df, tmp], axis=1)
         iHandle.close()		
 
 class IlluminaHiSeq_RNASeq(TCGAMatrixImport):
