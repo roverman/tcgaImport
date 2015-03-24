@@ -1,0 +1,5 @@
+cd /home/ubuntu/tcgaImport
+mkdir -p data
+./tcgaImport.py download uuid -o data/tcga_uuid_map
+./synapseCompare_meta.py --project syn3278459 -o to_update.txt
+./submitQ.py
