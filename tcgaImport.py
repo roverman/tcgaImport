@@ -538,17 +538,16 @@ class TCGAGeneticImport(FileImporter):
             secondLine = iHandle.readline()
             colType = secondLine.rstrip().split("\t")
             colType = [commonMap.get(colType[i], colType[i]) for i in range(len(colType))]
-            tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType)
+            tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType, index_col=0)
             wantedProbeFields = self.dataSubTypes[dataSubType]['probeFields']
             idx = [col in wantedProbeFields for col in colType]
-            tmp = tmp[idx]
-            #print tmp.columns
-            tmp.columns = ["key", colName[1]]
+            tmp = tmp.ix[:,idx]
+            tmp.columns = [colName[1]]
             tmp = tmp.dropna()
             if self.df.empty: 
                 self.df = tmp
             else:
-                self.df = pd.merge(self.df, tmp, on="key", how="outer")
+                self.df = pd.merge(self.df, tmp, how="outer")
         else:
             tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName)
             tmp["file"] = os.path.basename(path)
@@ -562,18 +561,18 @@ class TCGAGeneticImport(FileImporter):
                 if self.df.empty:
                     self.df = tmp
                 else:
-                self.df = self.df.merge(tmp, how="outer")
+                    self.df = self.df.merge(tmp, how="outer")
             else:
                 tmp = tmp.drop("file", 1)
                 wantedProbeFields = self.dataSubTypes[dataSubType]['probeFields']
                 idx = [col in wantedProbeFields for col in colType]
-                tmp = tmp[idx]
+                tmp = tmp.ix[:,idx]
                 tmp.columns = ["key", os.path.basename(path).split(".")[0]]
                 if self.df.empty:    
                     self.df = tmp
                 else:
                     #print self.df
-                    self.df = pd.merge(self.df, tmp, on="key", how="outer")
+                    self.df = pd.merge(self.df, tmp, how="outer")
 
     def convertKey(key, tmap):
         if not key in tmap:
@@ -704,8 +703,11 @@ class TCGAMatrixImport(TCGAGeneticImport):
             d[arr[0]] = arr[1].strip("\"").strip(".SD")
         f.close()
         d["key"] = "probes"
-	self.df.columns = [ translageUUID.get(d[key], self.translateUUID(key)) for key in self.df.columns]
+	self.df.columns = [ translateUUID.get(d[key], self.translateUUID(key)) for key in self.df.columns]
         matrixFile = open("%s/%s.matrix_file" % (self.work_dir, dataSubType), "w" )
+        sortedIndex = sorted(self.df.index)
+        sortedCol = sorted(self.df.columns)
+        self.df = self.df.ix[sortedIndex, sortedCol]
         self.df.to_csv(matrixFile, header=True, sep="\t", index=False, float_format="%.4f")
         matrixFile.close()
         matrixName = self.config.name    
@@ -1145,17 +1147,16 @@ class HuEx1_0stv2(TCGAMatrixImport):
         colName = firstLine.rstrip().split("\t")
         secondLine = iHandle.readline()
         colType = secondLine.rstrip().split("\t")
-        tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType)
+        tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType, index_col=0)
         wantedFields = self.dataSubTypes[dataSubType]['probeFields']
         idx = [col in wantedFields for col in colType]
-        tmp = tmp[idx]
-        colName[0] = "key"
-        tmp.columns = colName
+        tmp = tmp.ix[:, idx]
+        tmp.columns = colName[1:]
         tmp = tmp.dropna()
         if self.df.empty:
             self.df = tmp              
         else:
-            self.df = pd.merge(self.df, tmp, on="key", how="outer")
+            self.df = pd.merge(self.df, tmp, how="outer")
 
 class Human1MDuoImport(TCGASegmentImport):
     dataSubTypes = {
@@ -1221,18 +1222,18 @@ class HumanMethylation450(TCGAMatrixImport):
         line = iHandle.readline()
         colName = line.rstrip().split("\t")
         colName[0] = "key"              
-        tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName)
+        tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName, index_col=0)
         wantedFields = self.dataSubTypes[dataSubType]['probeFields']
         idx = [col in wantedFields for col in colType]
-        tmp = tmp[idx]
-        tmp.columns = ["key", key]
+        tmp = tmp.ix[:, idx]
+        tmp.columns = [key]
         tmp = tmp.dropna()
         if self.df.empty:
             self.df = tmp
         else:
             if key in self.df.columns:
                 self.df=self.df.drop(key, 1)
-            self.df = pd.merge(self.df, tmp, on="key", how="outer")
+            self.df = pd.merge(self.df, tmp, how="outer")
         
 class Illumina_RNASeq(TCGAMatrixImport):
     dataSubTypes = {
@@ -1271,15 +1272,15 @@ class Illumina_RNASeqV2(TCGAMatrixImport):
         fname = os.path.basename(path)
         firstLine = iHandle.readline()
         colName = firstLine.rstrip().split("\t")
-        tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName)
+        tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName, index_col=0)
         wantedFields = self.dataSubTypes[dataSubType]['probeFields']
         idx = [col in wantedFields for col in colType]
-        tmp = tmp[idx]
-        tmp.columns = ["key", fname]
+        tmp = tmp[:,idx]
+        tmp.columns = [fname]
         if self.df.empty:
             self.df = tmp
         else:
-            self.df = pd.merge(self.df, tmp, on="key", how="outer")
+            self.df = pd.merge(self.df, tmp, how="outer")
         iHandle.close()		
 
 class IlluminaHiSeq_RNASeq(TCGAMatrixImport):
