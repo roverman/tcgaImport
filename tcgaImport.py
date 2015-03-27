@@ -219,13 +219,13 @@ def getBaseBuildConf(basename, platform, mirror):
             }            
             for e2 in CustomQuery(e['platform']):
                 platform = e2['name']
-                meta['platform'] = e2['name']
+                meta['annotations']['platform'] = e2['name']
                 meta['annotations']['platformTitle'] = e2['displayName']
             for e2 in CustomQuery(e['disease']):
                 meta['annotations']['acronym'] = e2['abbreviation']
                 meta['annotations']['diseaseTitle'] = e2['name']
                 for e3 in CustomQuery(e2['tissueCollection']):
-                    meta['tissue'] = e3['name']
+                    meta['annotations']['tissue'] = e3['name']
             for e2 in CustomQuery(e['center']):
                 meta['annotations']['centerTitle'] = e2['displayName']
                 meta['annotations']['center'] = e2['name']
@@ -379,7 +379,7 @@ class FileImporter:
                 oHandle.write(chunk)
         oHandle.close()
         md5str = md5.hexdigest()
-        meta['md5'] = md5str
+        meta['annotations']['md5'] = md5str
         mHandle = open(self.config.getOutMeta(self.dataSubTypes[dataSubType]['nameGen']), "w")
         mHandle.write( json.dumps(meta))
         mHandle.close()
@@ -1121,7 +1121,7 @@ class SNP6Import(TCGASegmentImport):
             
         segFile.close()
         meta = self.getMeta(self.config.name + ".hg19", dataSubType)
-        meta['assembly'] = { "@id" : 'hg19' }
+        meta['annotations']['assembly'] = { "@id" : 'hg19' }
         self.emitFile(dataSubType, meta, "%s/%s.out"  % (self.work_dir, dataSubType))
        
 
