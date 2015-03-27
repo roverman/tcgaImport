@@ -1689,9 +1689,8 @@ def main_download(options):
 
     if options.download_type == 'uuid':
         url="https://tcga-data.nci.nih.gov/uuid/uuidBrowserExport.htm"
-        data = {}
-        data['exportType'] = 'tab'
-        data['cols'] = "uuid,barcode"
+        data = {'exportType': 'tab',
+                'cols': 'uuid,barcode'}
         if options.output is not None:
             urllib.urlretrieve( url, options.output, data=urllib.urlencode(data))
         else:
