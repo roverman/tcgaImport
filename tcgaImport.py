@@ -541,7 +541,7 @@ class TCGAGeneticImport(FileImporter):
             secondLine = iHandle.readline()
             colType = secondLine.rstrip().split("\t")
             colType = [commonMap.get(colType[i], colType[i]) for i in range(len(colType))]
-            tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType, index_col=0)
+            tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType[1:], index_col=0)
             wantedProbeFields = self.dataSubTypes[dataSubType]['probeFields']
             idx = [col in wantedProbeFields for col in colType]
             idx = idx[1:]
@@ -650,7 +650,8 @@ class TCGAMatrixImport(TCGAGeneticImport):
         #use the target table to create a name translation table
         #also setup target name enumeration, so they will have columns
         #numbers 
-        
+        print self.df.shape
+	print self.df.columns
         matrixFile = None
         f=open(self.work_dir +"/targets", "r")
         d = dict()
@@ -661,6 +662,7 @@ class TCGAMatrixImport(TCGAGeneticImport):
         f.close()
         d["key"] = "probes"
 	self.df.columns = [ self.translateUUID(d[key]) for key in self.df.columns]
+        print self.df.columns
         matrixFile = open("%s/%s.matrix_file" % (self.work_dir, dataSubType), "w" )
         sortedIndex = sorted(self.df.index)
         sortedCol = sorted(self.df.columns)
@@ -1080,13 +1082,13 @@ class HuEx1_0stv2(TCGAMatrixImport):
     def fileScan(self, path, dataSubType):
         with open(path, "U") as iHandle:
             colName = iHandle.readline().rstrip().split("\t")
-            colType = iHandle.readline().rstrip().split("\t")
-            tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType, index_col=0)
-        wantedFields = self.dataSubTypes[dataSubType]['probeFields']
-        tmp = tmp.ix[:, wantedFields]
+            tmp = pd.read_csv(iHandle, sep="\t", header=0, index_col=0)
         tmp.columns = colName[1:]
-        tmp = tmp.dropna()
+	print tmp.shape,        
+	tmp = tmp.dropna()
+	print tmp.shape
         self.df = pd.concat([self.df, tmp], axis=1)
+	print self.df.shape
 
 class Human1MDuoImport(TCGASegmentImport):
     dataSubTypes = {
