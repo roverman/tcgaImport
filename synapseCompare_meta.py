@@ -6,6 +6,7 @@ from argparse import ArgumentParser
 import json
 import sys
 import logging
+import time
 
 logging.basicConfig(level=logging.INFO)
 
@@ -63,6 +64,6 @@ if __name__ == "__main__":
                 else:
                     logging.info("Not all used archives Found: %s" ','.join(set(req_elems) - set(prov)))
                     handle.write("UPDATE: %s\n" % (basename))
-                     #We have already notified that basename needs to be updated skip rest of subtypes
+                    #We have already notified that basename needs to be updated skip rest of subtypes
                     break
     handle.close()

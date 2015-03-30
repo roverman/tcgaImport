@@ -28,7 +28,7 @@ import subprocess
 import logging
 from argparse import ArgumentParser
 from urlparse import urlparse
-
+import pandas as pd
 
 
 """
@@ -36,7 +36,10 @@ from urlparse import urlparse
 Net query code
 
 """
-
+def correctChrom(key):
+    if not str(key).startswith("chr"): 
+        key = "chr" + str(key)
+    return key.upper().replace("CHR", "chr")
 class dccwsItem(object):
     baseURL = "http://tcga-data.nci.nih.gov/tcgadccws/GetXML?query="
 
@@ -91,7 +94,7 @@ class CustomQuery(dccwsItem):
         else:
             self.url = dccwsItem.baseURL + query
 
-    
+   
 def getText(nodelist):
     rc = []
     for node in nodelist:
@@ -265,9 +268,6 @@ def getBaseBuildConf(basename, platform, mirror):
     return BuildConf(platform, basename, versionDate, meta, urls)
     
 
-
-
-
 class TableReader:
     def __init__(self, path):
         self.path = path
@@ -287,7 +287,6 @@ class TableReader:
 
 class FileImporter:
     dataSubTypes = {}
-    
     excludes = [
          "MANIFEST.txt$",
          "CHANGES_DCC.txt$",
@@ -302,7 +301,9 @@ class FileImporter:
     def __init__(self, config, build_req):
         self.config = config
         self.build_req = build_req
-        
+    	#variable df, which is the data frame keeping all the data, it will be assigned in the run() method
+        self.df = None
+
     def extractTars(self):  
         if not os.path.exists(self.config.workdir_base):
             os.makedirs(self.config.workdir_base)      
@@ -322,6 +323,7 @@ class FileImporter:
         for o in self.out:
             self.out[o].close()
         for dsubtype in self.dataSubTypes:
+            self.df = pd.DataFrame()
             print "Extracting: ", dsubtype
             filterInclude = None
             filterExclude = None
@@ -344,7 +346,7 @@ class FileImporter:
             if re.search( e, name ):
                 return True
         return False
-    
+          
     def scandirs(self, path, dataSubType, filterInclude=None, filterExclude=None):
         if os.path.isdir(path):
             for a in glob(os.path.join(path, "*")):
@@ -504,6 +506,9 @@ class TCGAGeneticImport(FileImporter):
             tTrans[ key ] = value
         return tTrans
     
+    
+
+    
     def fileScan(self, path, dataSubType):
         """
         This function takes a TCGA level 3 genetic file (file name and input handle),
@@ -520,61 +525,52 @@ class TCGAGeneticImport(FileImporter):
         target = None
         colName = None
         colType = None
-        for line in iHandle:
-            if colName is None:
-                colName = line.rstrip().split("\t")                     
-                if colName[0] == "Hybridization REF" or colName[0] == "Sample REF":
-                    mode=2
-                elif colName[0] == "Chromosome" or colName[0] == "chromosome":
-                    mode=1
-                    target=os.path.basename( path ).split('.')[0] #seg files are named by the filename before the '.' extention
-                elif colName[1] == "chrom":
-                    mode = 3
-                    target=os.path.basename( path ).split('.')[0] #seg files are named by the filename before the '.' extention
-                    
-                for i in range(len(colName)):
-                    if commonMap.has_key( colName[i] ):
-                        colName[i] = commonMap[ colName[i] ]
-            elif mode==2 and colType is None:
-                colType=line.rstrip().split("\t")
-                for i in range(len(colType)):
-                    if commonMap.has_key( colType[i] ):
-                        colType[i] = commonMap[ colType[i] ]
-            else:
-                tmp = line.rstrip().split("\t")
-                if mode == 2:
-                    out={}
-                    for col in colName[1:]:
-                        out[ col ] = { "target" : col }
-                    for i in range(1,len(colType)):
-                        try:
-                            if colType[i] in self.dataSubTypes[dataSubType]['probeFields']:
-                                out[ colName[i] ][ colType[i] ] = tmp[i]
-                        except IndexError:
-                            out[ colName[i] ][ colType[i] ] = "NA"
-                    for col in out:
-                        self.emit( tmp[0], out[col], dataSubType + ".probes" )
-                else:
-                    out = {}
-                    for i in range(len(colName)):
-                        out[ colName[i] ] = tmp[i]
-                    out['file'] = os.path.basename(path)
-                    if mode==1:
-                        self.emit( target, out,  dataSubType + ".segments" )
-                    elif mode == 3:
-                        self.emit( tmp[0], out,  dataSubType + ".segments" )
-                    else:
-                        self.emit( tmp[0], out,  dataSubType + ".probes" )
-
+        firstLine = iHandle.readline()
+        colName = firstLine.rstrip().split("\t")
+        if colName[0] == "Hybridization REF" or colName[0] == "Sample REF":
+            mode = 2
+        elif colName[0] == "Chromosome"  or colName[0] == "chromosome":
+            mode = 1
+            target = os.path.basename( path ).split('.')[0]
+        elif colName[1] == "chrom":
+            mode = 3
+            target = os.path.basename( path ).split('.')[0]
         
-def get_field_match(value, fields):
-    for f in fields:
-        if f in value:
-            return value[f]
+        if mode == 2:
+            colName = [commonMap.get(colName[i], colName[i]) for i in range(len(colName))]
+            secondLine = iHandle.readline()
+            colType = secondLine.rstrip().split("\t")
+            colType = [commonMap.get(colType[i], colType[i]) for i in range(len(colType))]
+            tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colType[1:], index_col=0)
+            wantedProbeFields = self.dataSubTypes[dataSubType]['probeFields']
+            idx = [col in wantedProbeFields for col in colType]
+            idx = idx[1:]
+            tmp = tmp.ix[:,idx]
+            tmp.columns = [colName[1]]
+            tmp = tmp.dropna()
+            self.df = pd.concat([self.df, tmp], axis=1)
+        else:
+            tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName, index_col=0)
+            tmp["file"] = os.path.basename(path)
+            if mode==1:
+                tmp["key"] = target
+                self.df = pd.concat([self.df,tmp], axis=1)
+            elif mode == 3:
+                self.df = pd.concat([self.df, tmp], axis=1)
+            else:
+                tmp = tmp.drop("file", 1)
+                wantedProbeFields = self.dataSubTypes[dataSubType]['probeFields']
+                tmp = tmp.ix[:,wantedProbeFields]
+                tmp.columns = [os.path.basename(path).split(".")[0]]
+                self.df = pd.concat([self.df, tmp], axis=1)
+
+    def convertKey(self, key, tmap):
+        if not key in tmap:
+            return self.translateUUID(key)
+        return self.translateUUID(tmap[key])
 
 class TCGASegmentImport(TCGAGeneticImport):
-    
-    
+
     def fileScan(self, path, dataSubType):
         """
         This function takes a TCGA level 3 genetic file (file name and input handle),
@@ -582,38 +578,14 @@ class TCGASegmentImport(TCGAGeneticImport):
         it emits these values to a handle, using the 'targets' and 'probes' string to identify 
         the type of data being emited
         """
-        iHandle = open(path)
-        mode = None
-        #modes
-        #1 - segmentFile - one sample per file/no sample info inside file
-        #2 - segmentFile - sample information inside file
-        target = None
-        colName = None
-        colType = None
-        for line in iHandle:
-            if colName is None:
-                colName = line.rstrip().split("\t")                     
-                if colName[0] == "Chromosome" or colName[0] == "chromosome":
-                    mode=1
-                    target=os.path.basename( path ).split('.')[0] #seg files are named by the filename before the '.' extention
-                elif colName[1] == "chrom":
-                    mode = 2
-                    
-                for i in range(len(colName)):
-                    if commonMap.has_key( colName[i] ):
-                        colName[i] = commonMap[ colName[i] ]
-            else:
-                tmp = line.rstrip().split("\t")
-                out = {}
-                for i in range(len(colName)):
-                    out[ colName[i] ] = tmp[i]
-                out['file'] = os.path.basename(path)
-                if mode==1:
-                    self.emit( target, out,  dataSubType + ".segments" )
-                elif mode == 2:
-                    self.emit( tmp[0], out,  dataSubType + ".segments" )
+        with open(path,'U') as iHandle:
+            tmp = pd.read_csv(iHandle, sep="\t", header=0)
+        
+        tmp['key'] = os.path.basename(path)
+        tmp.columns = [commonMap.get(col, col) for col in tmp.columns] 
+        tmp = tmp.ix[:,["chrom", "loc.start", "loc.end", "key", "seg.mean"]]
+        self.df = self.df.append(tmp)
 
-    
     def getMeta(self, name, dataSubType):
         matrixInfo = { 
             'name' : name + "." + dataSubType + ".bed", 
@@ -628,57 +600,21 @@ class TCGASegmentImport(TCGAGeneticImport):
         matrixInfo = dict_merge(matrixInfo, self.ext_meta)
         matrixInfo = dict_merge(matrixInfo, self.config.meta)
         return matrixInfo
-    
+
     def fileBuild(self, dataSubType):
         #use the target table to create a name translation table
         #also setup target name enumeration, so they will have columns
-        #numbers
-
-        tTrans = self.getTargetMap()        
-        subprocess.call("sort -k 1 %s/%s.segments > %s/%s.segments.sort" % (self.work_dir, dataSubType, self.work_dir, dataSubType), shell=True)
-        sHandle = TableReader(self.work_dir + "/%s.segments.sort" % (dataSubType))
-
-        segFile = None
-        curName = None
-        
-        curData = {}
-        missingCount = 0
-
-        startField  = ["loc.start", "Start"]
-        endField    = ["loc.end", "End"]
-        valField    = ["seg.mean", "Segment_Mean"]
-        chromeField = ["chrom", "Chromosome"]
-        
-        segFile = None
-
-        for key, value in sHandle:
-            if segFile is None:
-                segFile = open("%s/%s.segment_file"  % (self.work_dir, dataSubType), "w")
-            try:
-                curName = self.translateUUID(tTrans[key]) # "-".join( tTrans[ key ].split('-')[0:4] )
-                if curName is not None:
-                    try:
-                        chrom = get_field_match(value, chromeField).lower()
-                        if not chrom.startswith("chr"):
-                            chrom = "chr" + chrom
-                        chrom = chrom.upper().replace("CHR", "chr")
-                        #segFile.write( "%s\t%s\t%s\t%s\t.\t%s\n" % ( curName, chrom, int(value[ startField ])+1, value[ endField ], value[ valField ] ) )
-                        segFile.write( "%s\t%s\t%s\t%s\t%s\n" % ( 
-                            chrom, 
-                            int(get_field_match(value, startField))-1, 
-                            get_field_match(value, endField), curName, 
-                            get_field_match( value, valField ) ) 
-                        )
-                    except KeyError:
-                         self.addError( "Field error: %s" % (str(value)))
-            except KeyError:
-                self.addError( "TargetInfo Not Found: %s" % (key))
-            
+        #numbers         
+        tmap = self.getTargetMap()
+        segFile = open("%s/%s.segment_file"  % (self.work_dir, dataSubType), "w") 
+        self.df["key"] = self.df["key"].apply(self.convertKey, tmap=tmap)
+        self.df = self.df.query(" key != 'NA' ")
+        self.df["chrom"] = self.df["chrom"].apply(correctChrom)
+        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4f")     
         segFile.close()
         matrixName = self.config.name
 
-        self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.segment_file"  % (self.work_dir, dataSubType) )     
-
+        self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.segment_file"  % (self.work_dir, dataSubType) )
 
 def dict_merge(x, y):
     #print "dict", x, y
@@ -693,7 +629,7 @@ def dict_merge(x, y):
 
 class TCGAMatrixImport(TCGAGeneticImport):
     
-    def getMeta(self, name, dataSubType):
+    def getMeta(self, name, dataSubType):#return a dictionary
         matrixInfo = { 
             'annotations' : {
                 'fileType' : 'genomicMatrix',
@@ -708,70 +644,33 @@ class TCGAMatrixImport(TCGAGeneticImport):
         matrixInfo = dict_merge(matrixInfo, self.ext_meta)
         matrixInfo = dict_merge(matrixInfo, self.config.meta)
         return matrixInfo
-        
+
+    
     def fileBuild(self, dataSubType):
         #use the target table to create a name translation table
         #also setup target name enumeration, so they will have columns
-        #numbers        
-        
-        subprocess.call("sort -k 1 %s/%s.probes > %s/%s.probes.sort" % (self.work_dir, dataSubType, self.work_dir, dataSubType), shell=True)
-        subprocess.call("sort -k 1 %s/targets > %s/targets.sort" % (self.work_dir, self.work_dir), shell=True)
-                
-        handles = {}
-        handles[ "geneticExtract:targets" ] = TableReader(self.work_dir + "/targets.sort")
-        handles[ "geneticExtract:%s.probes" % (dataSubType) ] = TableReader(self.work_dir + "/%s.probes.sort" % (dataSubType))
-
-        tTrans = self.getTargetMap()
-        
-        tEnum = {}
-        for t in tTrans:
-            tlabel = self.translateUUID(tTrans[t])
-            if tlabel is not None and tlabel not in tEnum:
-                tEnum[tlabel] = len(tEnum)
-                
+        #numbers 
+        print self.df.shape
+	print self.df.columns
         matrixFile = None
-        segFile = None
-
-        curName = None
-        curData = {}
-        missingCount = 0
-        rowCount = 0
-        pHandle = handles["geneticExtract:%s.probes" % (dataSubType)]
-        for key, value in pHandle:
-            if matrixFile is None:
-                matrixFile = open("%s/%s.matrix_file" % (self.work_dir, dataSubType), "w" )            
-                out = ["NA"] * len(tEnum)
-                for target in tEnum:
-                    out[ tEnum[ target ] ] = target
-                matrixFile.write( "%s\t%s\n" % ( "#probe", "\t".join( out ) ) )        
-            
-            if curName != key:
-                if curName is not None:
-                    out = ["NA"] * len(tEnum)
-                    for target in curData:
-                        try:
-                            ttarget = self.translateUUID(tTrans[target])
-                            if ttarget is not None:
-                                out[ tEnum[ ttarget ] ] = str( curData[ target ] )
-                        except KeyError:
-                            self.addError( "TargetInfo Not Found: %s" % (target))
-                    if out.count("NA") != len(tEnum):
-                        rowCount += 1
-                        matrixFile.write( "%s\t%s\n" % ( curName, "\t".join( out ) ) )  
-                curName = key
-                curData = {}
-            if "target" in value:
-                for probeField in self.dataSubTypes[dataSubType]['probeFields']:
-                    if probeField in value:
-                        curData[ value[ "target" ] ] = value[ probeField ]
-            elif "file" in value:
-                for probeField in self.dataSubTypes[dataSubType]['probeFields']:
-                    if probeField in value:
-                        curData[ value[ "file" ] ] = value[ probeField ]
+        f=open(self.work_dir +"/targets", "r")
+        d = dict()
+        for line in f:
+            arr = line.strip().split("\t")
+            if len(arr) < 2: continue
+            d[arr[0]] = arr[1].strip("\"").strip(".SD")
+        f.close()
+        d["key"] = "probes"
+	self.df.columns = [ self.translateUUID(d[key]) for key in self.df.columns]
+        print self.df.columns
+        matrixFile = open("%s/%s.matrix_file" % (self.work_dir, dataSubType), "w" )
+        sortedIndex = sorted(self.df.index)
+        sortedCol = sorted(self.df.columns)
+        self.df = self.df.ix[sortedIndex, sortedCol]
+        self.df.to_csv(matrixFile, header=True, sep="\t", index=True, float_format="%.4f")
         matrixFile.close()
         matrixName = self.config.name    
-        if rowCount > 0:
-            self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.matrix_file"  % (self.work_dir, dataSubType) )
+        self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.matrix_file"  % (self.work_dir, dataSubType)) 
 
 
 adminNS = "http://tcga.nci/bcr/xml/administration/2.3"
@@ -1011,6 +910,7 @@ class AgilentImport(TCGAMatrixImport):
             'probeMap' : 'hugo',
             'sampleMap' : 'tcga.iddag',
             'dataType'  : 'genomicMatrix',
+            'fileExclude' : r'targets',
             'probeFields' : ['log2 lowess normalized (cy5/cy3) collapsed by gene symbol'],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.geneExp.tsv" % (x)
@@ -1024,6 +924,7 @@ class CGH1x1mImport(TCGASegmentImport):
             "sampleMap" : 'tcga.iddag',
             "dataType" : 'genomicSegment',
             "probeFields" : ['seg.mean'],
+            'fileExclude' : r'targets',
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
         }
@@ -1035,7 +936,7 @@ class SNP6Import(TCGASegmentImport):
         'cna' : { 
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
-            'probeFields' : ['seg.mean'],
+            'probeFields' : ['seg.mean', 'Segment_Mean'],
             'fileInclude' : r'^.*\.hg19.seg.txt$',
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.hg19.cna.bed" % (x)
@@ -1043,7 +944,7 @@ class SNP6Import(TCGASegmentImport):
         'cna_nocnv' : {
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
-            'probeFields' : ['seg.mean'],
+            'probeFields' : ['seg.mean',  'Segment_Mean'],
             'fileInclude' : r'^.*\.nocnv_hg19.seg.txt$',
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.hg19.cna_nocnv.bed" % (x)
@@ -1069,56 +970,21 @@ class SNP6Import(TCGASegmentImport):
     def fileScan(self, path, dataSubType):
         handle = open(path)
         colName = None
-        for line in handle:
-            if colName is None:
-                colName = line.rstrip().split("\t")                     
-                for i, col in enumerate(colName):
-                    if commonMap.has_key( col ):
-                        colName[i] = commonMap[ col ]
-            else:
-                tmp = line.rstrip().split("\t")
-                out = {}
-                for i in range(1, len(colName)):
-                    out[ colName[i] ] = tmp[i]
-                self.emit( tmp[0], out, dataSubType )
+        line = handle.readline()
+        colName = line.rstrip().split("\t")
+        colName = [commonMap.get(col, col) for col in colName]  
+        colName[0] = "key"
+        tmp = pd.read_csv(handle, sep="\t", header=None, names=colName)
+        tmp = tmp.ix[:, ["chrom", "loc.start", "loc.end", "key", "seg.mean"]]
+        self.df = self.df.append(tmp)
         handle.close()
     
     def fileBuild(self, dataSubType):
         tmap = self.getTargetMap()  
-        
-        subprocess.call("sort -k 1 %s/%s > %s/%s.sort" % (self.work_dir, dataSubType, self.work_dir, dataSubType), shell=True)                
-        handle = TableReader(self.work_dir + "/%s.sort" % (dataSubType))
-
-        segFile = None
-        curName = None
-        curData = {}
-        missingCount = 0
-
-        startField  = ["loc.start", "Start"]
-        endField    = ["loc.end", "End"]
-        valField    = [self.dataSubTypes[dataSubType]['probeFields'][0], "Segment_Mean"]
-        chromeField = ["chrom", "Chromosome"]
-            
-        segFile = None
-        sHandle = handle
-        for key, value in sHandle:
-            if segFile is None:
-                segFile = open("%s/%s.out"  % (self.work_dir, dataSubType), "w")
-            try:
-                curName = self.translateUUID(tmap[key])
-                if curName is not None:
-                    chrom = get_field_match(value, chromeField).lower()
-                    if not chrom.startswith("chr"):
-                        chrom = "chr" + chrom
-                    chrom = chrom.upper().replace("CHR", "chr")
-                    segFile.write( "%s\t%s\t%s\t%s\t%s\n" % ( 
-                        chrom, get_field_match(value, startField), 
-                        get_field_match(value, endField), 
-                        curName, get_field_match(value, valField ) ) 
-                    )
-            except KeyError:
-                self.addError( "TargetInfo Not Found: %s" % (key))
-            
+        self.df["key"] = self.df["key"].apply(self.convertKey, tmap=tmap)
+        self.df["chrom"] = self.df["chrom"].apply(correctChrom)
+        segFile = open("%s/%s.out"  % (self.work_dir, dataSubType), "w")
+        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4f")     
         segFile.close()
         meta = self.getMeta(self.config.name + ".hg19", dataSubType)
         meta['annotations']['assembly'] = { "@id" : 'hg19' }
@@ -1142,7 +1008,8 @@ class CGH244AImport(TCGASegmentImport):
         'cna' : {
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
-            'probeFields' : ['Segment_Mean'],
+            'fileExclude' : r'targets',
+            'probeFields' : ['Segment_Mean','seg.mean'],
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
         }
@@ -1154,6 +1021,7 @@ class CGH415K_G4124A(TCGASegmentImport):
             'sampleMap' : 'tcga.iddag',
             'chromeField' : 'Chromosome',
             'dataType' : 'genomicSegment',
+            'fileExclude' : r'targets',
             'endField' : 'End',
             'probeFields' : ['Segment_Mean'],
             'startField' : 'Start',
@@ -1170,6 +1038,7 @@ class IlluminaHiSeq_DNASeqC(TCGASegmentImport):
             'dataType' : 'genomicSegment',
             'endField' : 'End',
             'probeFields' : ['Segment_Mean'],
+            'fileExclude' : r'targets',
             'startField' : 'Start',
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
@@ -1180,7 +1049,7 @@ class IlluminaHiSeq_DNASeqC(TCGASegmentImport):
         out = self.config.translateUUID(uuid)
         #censor out normal ids
         if re.search(r'^TCGA-..-....-1', out):
-            return None
+            return ""
         return out
 
 class HT_HGU133A(TCGAMatrixImport):
@@ -1189,7 +1058,8 @@ class HT_HGU133A(TCGAMatrixImport):
             'probeMap' : 'affyU133a',
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
-            'probeFields' : ['Signal'],
+            'fileExclude' : r'targets',
+            'probeFields' : ['Signal', 'Value'],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.geneExp.tsv" % (x)
         }
@@ -1202,17 +1072,30 @@ class HuEx1_0stv2(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
             'probeFields' : ['Signal'],
+            'fileExclude' : '.*.adf.txt|^.*idf.txt|^.*sdrf.txt|targets$',
             'fileInclude' : '^.*gene.txt$|^.*sdrf.txt$',
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.miRNAExp.tsv" % (x)
         }
     }
 
+    def fileScan(self, path, dataSubType):
+        with open(path, "U") as iHandle:
+            colName = iHandle.readline().rstrip().split("\t")
+            tmp = pd.read_csv(iHandle, sep="\t", header=0, index_col=0)
+        tmp.columns = colName[1:]
+	print tmp.shape,        
+	tmp = tmp.dropna()
+	print tmp.shape
+        self.df = pd.concat([self.df, tmp], axis=1)
+	print self.df.shape
+
 class Human1MDuoImport(TCGASegmentImport):
     dataSubTypes = {
         'cna' : {
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
+            'fileExclude' : r'targets',
             'probeFields' : ['mean'],
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
@@ -1224,6 +1107,7 @@ class HumanHap550(TCGASegmentImport):
         'cna' : {
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
+            'fileExclude' : r'targets',
             'probeFields' : ['mean'],
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
@@ -1236,7 +1120,7 @@ class HumanMethylation27(TCGAMatrixImport):
             'probeMap' : 'illuminaMethyl27K_gpl8490',
             'sampleMap' :  'tcga.iddag',
             'dataType' : 'genomicMatrix',
-            'fileExclude' : '.*.adf.txt',
+            'fileExclude' : '.*.adf.txt|^.*idf.txt|^.*sdrf.txt|targets$',
             'probeFields' : ['Beta_Value', 'Beta_value'],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.betaValue.tsv" % (x)
@@ -1250,7 +1134,7 @@ class HumanMethylation450(TCGAMatrixImport):
             'probeMap' :  'illuminaHumanMethylation450',
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
-            'fileExclude' : '.*.adf.txt',
+            'fileExclude' : '.*.adf.txt|^.*idf.txt|^.*sdrf.txt|targets$',
             'probeFields' :  ['Beta_value', 'Beta_Value'],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.betaValue.tsv" % (x)
@@ -1264,43 +1148,20 @@ class HumanMethylation450(TCGAMatrixImport):
         it emits these values to a handle, using the 'targets' and 'probes' string to identify 
         the type of data being emited
         """
-        iHandle = open(path)
-        mode = None
-        #modes
-        #1 - two col header matrix file
-        target = None
-        colName = None
-        colType = None
-        for line in iHandle:
-            if colName is None:
-                colName = line.rstrip().split("\t")                     
-                if colName[0] == "Hybridization REF" or colName[0] == "Sample REF":
-                    mode=1                    
-                for i in range(len(colName)):
-                    if commonMap.has_key( colName[i] ):
-                        colName[i] = commonMap[ colName[i] ]
-            elif mode==1 and colType is None:
-                colType=line.rstrip().split("\t")
-                for i in range(len(colType)):
-                    if commonMap.has_key( colType[i] ):
-                        colType[i] = commonMap[ colType[i] ]
-            else:
-                tmp = line.rstrip().split("\t")
-                if mode == 1:
-                    out={}
-                    for col in colName[1:]:
-                        out[ col ] = { "target" : col }
-                    for i in range(1,len(colType)):
-                        try:
-                            if colType[i] in self.dataSubTypes[dataSubType]['probeFields']:
-                                out[ colName[i] ][ colType[i] ] = "%.4f" % float(tmp[i])
-                        except IndexError:
-                            out[ colName[i] ][ colType[i] ] = "NA"
-                        except ValueError:
-                            out[ colName[i] ][ colType[i] ] = "NA"
-                    for col in out:
-                        self.emit( tmp[0], out[col], dataSubType + ".probes" )
-                
+        with open(path) as iHandle:
+            key = iHandle.readline().rstrip().split("\t")[1]
+            colName = iHandle.readline().rstrip().split("\t")
+            colName[0] = "key"              
+            tmp = pd.read_csv(iHandle, sep="\t", header=None, names=colName, index_col=0)
+        wantedFields = self.dataSubTypes[dataSubType]['probeFields']
+        idx = [col in wantedFields for col in colName][1:]
+        tmp = tmp.ix[:, idx]
+        tmp.columns = [key]
+        tmp = tmp.dropna()
+        if not self.df.empty and key in self.df.columns:
+            self.df=self.df.drop(key, 1)
+        self.df = pd.concat([self.df, tmp], axis=1)
+        
 class Illumina_RNASeq(TCGAMatrixImport):
     dataSubTypes = {
         'geneExp' : {
@@ -1332,6 +1193,17 @@ class Illumina_RNASeqV2(TCGAMatrixImport):
             'nameGen' : lambda x : "%s.isoformExp.tsv" % (x)
         }
     }
+    def fileScan(self, path, dataSubType):
+        
+        with open(path, 'U') as iHandle: 
+            tmp = pd.read_csv(iHandle, sep="\t", header=0, index_col=0)    
+        fname = os.path.basename(path)
+        wantedFields = self.dataSubTypes[dataSubType]['probeFields']
+        #print tmp.head()
+        #print wantedFields
+        tmp = tmp.ix[:,wantedFields]
+        tmp.columns = [fname]
+        self.df = pd.concat([self.df, tmp], axis=1)
 
 class IlluminaHiSeq_RNASeq(TCGAMatrixImport):
     dataSubTypes = {
@@ -1350,7 +1222,7 @@ class MDA_RPPA_Core(TCGAMatrixImport):
         "RPPA" : {
             'sampleMap' : 'tcga.iddag',
             'probeMap' : "md_anderson_antibodies",
-            'fileExclude' : r'^.*.antibody_annotation.txt|^.*array_design.txt$',
+            'fileExclude' : r'^.*.antibody_annotation.txt|^.*array_design.txt|^.*idf.txt|^.*sdrf.txt|targets$',
             'probeFields' : [ 'Protein Expression', 'Protein.Expression' ],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.RPPA.tsv" % (x)
