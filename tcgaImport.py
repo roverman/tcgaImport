@@ -662,7 +662,7 @@ class TCGAMatrixImport(TCGAGeneticImport):
         sortedIndex = sorted(self.df.index)
         sortedCol = sorted(self.df.columns)
         self.df = self.df.ix[sortedIndex, sortedCol]
-        self.df.to_csv(matrixFile, header=True, sep="\t", index=True, float_format="%.4f")
+        self.df.to_csv(matrixFile, header=True, sep="\t", index=True, float_format="%.4g")
         matrixFile.close()
         matrixName = self.config.name    
         self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.matrix_file"  % (self.work_dir, dataSubType)) 
@@ -979,7 +979,7 @@ class SNP6Import(TCGASegmentImport):
         self.df["key"] = self.df["key"].apply(self.convertKey, tmap=tmap)
         self.df["chrom"] = self.df["chrom"].apply(correctChrom)
         segFile = open("%s/%s.out"  % (self.work_dir, dataSubType), "w")
-        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4f")     
+        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4g")     
         segFile.close()
         meta = self.getMeta(self.config.name + ".hg19", dataSubType)
         meta['annotations']['assembly'] = { "@id" : 'hg19' }
