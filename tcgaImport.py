@@ -608,7 +608,7 @@ class TCGASegmentImport(TCGAGeneticImport):
         self.df["key"] = self.df["key"].apply(self.convertKey, tmap=tmap)
         self.df = self.df[self.df.key != 'NA']
         self.df["chrom"] = self.df["chrom"].apply(correctChrom)
-        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4f")     
+        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4g")     
         segFile.close()
         matrixName = self.config.name
 
