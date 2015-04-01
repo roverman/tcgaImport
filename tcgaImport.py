@@ -215,9 +215,7 @@ def getBaseBuildConf(basename, platform, mirror):
         if meta is None:
             meta = {
                 #'name' : basename,
-                'annotations' : {}, 
-                'species' : 'Homo sapiens',
-                'disease' : 'cancer',
+                'annotations' : {'species' : 'Homo sapiens', 'disease' : 'cancer'},
                 'provenance' : { 'name' : 'tcgaImport', 'used' : [] }
             }            
             for e2 in CustomQuery(e['platform']):
@@ -608,7 +606,7 @@ class TCGASegmentImport(TCGAGeneticImport):
         tmap = self.getTargetMap()
         segFile = open("%s/%s.segment_file"  % (self.work_dir, dataSubType), "w") 
         self.df["key"] = self.df["key"].apply(self.convertKey, tmap=tmap)
-        self.df = self.df.query(" key != 'NA' ")
+        self.df = self.df[self.df.key != 'NA']
         self.df["chrom"] = self.df["chrom"].apply(correctChrom)
         self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4f")     
         segFile.close()
@@ -650,8 +648,6 @@ class TCGAMatrixImport(TCGAGeneticImport):
         #use the target table to create a name translation table
         #also setup target name enumeration, so they will have columns
         #numbers 
-        print self.df.shape
-	print self.df.columns
         matrixFile = None
         f=open(self.work_dir +"/targets", "r")
         d = dict()
@@ -662,7 +658,6 @@ class TCGAMatrixImport(TCGAGeneticImport):
         f.close()
         d["key"] = "probes"
 	self.df.columns = [ self.translateUUID(d[key]) for key in self.df.columns]
-        print self.df.columns
         matrixFile = open("%s/%s.matrix_file" % (self.work_dir, dataSubType), "w" )
         sortedIndex = sorted(self.df.index)
         sortedCol = sorted(self.df.columns)
@@ -1084,11 +1079,8 @@ class HuEx1_0stv2(TCGAMatrixImport):
             colName = iHandle.readline().rstrip().split("\t")
             tmp = pd.read_csv(iHandle, sep="\t", header=0, index_col=0)
         tmp.columns = colName[1:]
-	print tmp.shape,        
 	tmp = tmp.dropna()
-	print tmp.shape
         self.df = pd.concat([self.df, tmp], axis=1)
-	print self.df.shape
 
 class Human1MDuoImport(TCGASegmentImport):
     dataSubTypes = {
@@ -1199,8 +1191,6 @@ class Illumina_RNASeqV2(TCGAMatrixImport):
             tmp = pd.read_csv(iHandle, sep="\t", header=0, index_col=0)    
         fname = os.path.basename(path)
         wantedFields = self.dataSubTypes[dataSubType]['probeFields']
-        #print tmp.head()
-        #print wantedFields
         tmp = tmp.ix[:,wantedFields]
         tmp.columns = [fname]
         self.df = pd.concat([self.df, tmp], axis=1)
