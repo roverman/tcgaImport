@@ -215,20 +215,18 @@ def getBaseBuildConf(basename, platform, mirror):
         if meta is None:
             meta = {
                 #'name' : basename,
-                'annotations' : {}, 
-                'species' : 'Homo sapiens',
-                'disease' : 'cancer',
+                'annotations' : {'species' : 'Homo sapiens', 'disease' : 'cancer'},
                 'provenance' : { 'name' : 'tcgaImport', 'used' : [] }
             }            
             for e2 in CustomQuery(e['platform']):
                 platform = e2['name']
-                meta['platform'] = e2['name']
+                meta['annotations']['platform'] = e2['name']
                 meta['annotations']['platformTitle'] = e2['displayName']
             for e2 in CustomQuery(e['disease']):
                 meta['annotations']['acronym'] = e2['abbreviation']
                 meta['annotations']['diseaseTitle'] = e2['name']
                 for e3 in CustomQuery(e2['tissueCollection']):
-                    meta['tissue'] = e3['name']
+                    meta['annotations']['tissue'] = e3['name']
             for e2 in CustomQuery(e['center']):
                 meta['annotations']['centerTitle'] = e2['displayName']
                 meta['annotations']['center'] = e2['name']
@@ -381,7 +379,7 @@ class FileImporter:
                 oHandle.write(chunk)
         oHandle.close()
         md5str = md5.hexdigest()
-        meta['md5'] = md5str
+        meta['annotations']['md5'] = md5str
         mHandle = open(self.config.getOutMeta(self.dataSubTypes[dataSubType]['nameGen']), "w")
         mHandle.write( json.dumps(meta))
         mHandle.close()
@@ -609,9 +607,9 @@ class TCGASegmentImport(TCGAGeneticImport):
         tmap = self.getTargetMap()
         segFile = open("%s/%s.segment_file"  % (self.work_dir, dataSubType), "w") 
         self.df["key"] = self.df["key"].apply(self.convertKey, tmap=tmap)
-        self.df = self.df.query(" key != 'NA' ")
+        self.df = self.df[self.df.key != 'NA']
         self.df["chrom"] = self.df["chrom"].apply(correctChrom)
-        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4f")     
+        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4g")     
         segFile.close()
         matrixName = self.config.name
 
@@ -664,7 +662,7 @@ class TCGAMatrixImport(TCGAGeneticImport):
         sortedIndex = sorted(self.df.index)
         sortedCol = sorted(self.df.columns)
         self.df = self.df.ix[sortedIndex, sortedCol]
-        self.df.to_csv(matrixFile, header=True, sep="\t", index=True, float_format="%.4f")
+        self.df.to_csv(matrixFile, header=True, sep="\t", index=True, float_format="%.4g")
         matrixFile.close()
         matrixName = self.config.name    
         self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.matrix_file"  % (self.work_dir, dataSubType)) 
@@ -981,10 +979,10 @@ class SNP6Import(TCGASegmentImport):
         self.df["key"] = self.df["key"].apply(self.convertKey, tmap=tmap)
         self.df["chrom"] = self.df["chrom"].apply(correctChrom)
         segFile = open("%s/%s.out"  % (self.work_dir, dataSubType), "w")
-        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4f")     
+        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4g")     
         segFile.close()
         meta = self.getMeta(self.config.name + ".hg19", dataSubType)
-        meta['assembly'] = { "@id" : 'hg19' }
+        meta['annotations']['assembly'] = { "@id" : 'hg19' }
         self.emitFile(dataSubType, meta, "%s/%s.out"  % (self.work_dir, dataSubType))
        
 
@@ -1553,9 +1551,8 @@ def main_download(options):
 
     if options.download_type == 'uuid':
         url="https://tcga-data.nci.nih.gov/uuid/uuidBrowserExport.htm"
-        data = {}
-        data['exportType'] = 'tab'
-        data['cols'] = "uuid,barcode"
+        data = {'exportType': 'tab',
+                'cols': 'uuid,barcode'}
         if options.output is not None:
             urllib.urlretrieve( url, options.output, data=urllib.urlencode(data))
         else:
