@@ -517,7 +517,6 @@ class TCGAGeneticImport(FileImporter):
         the type of data being emited
         """
         iHandle = open(path)
-        #print path
         mode = None
         #modes
         #1 - segmentFile - one sample per file/no sample info inside file
@@ -536,7 +535,6 @@ class TCGAGeneticImport(FileImporter):
         elif colName[1] == "chrom":
             mode = 3
             target = os.path.basename( path ).split('.')[0]
-        #print "Mode is " + str(mode)
         if mode == 2:
             colName = [commonMap.get(colName[i], colName[i]) for i in range(len(colName))]
             secondLine = iHandle.readline()
@@ -620,7 +618,6 @@ class TCGASegmentImport(TCGAGeneticImport):
         self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.segment_file"  % (self.work_dir, dataSubType) )
 
 def dict_merge(x, y):
-    #print "dict", x, y
     result = dict(x)
     for k,v in y.iteritems():
         if k in result:
@@ -653,8 +650,6 @@ class TCGAMatrixImport(TCGAGeneticImport):
         #use the target table to create a name translation table
         #also setup target name enumeration, so they will have columns
         #numbers 
-        #print self.df.shape
-	#print self.df.columns
         matrixFile = None
         f=open(self.work_dir +"/targets", "r")
         d = dict()
@@ -665,7 +660,6 @@ class TCGAMatrixImport(TCGAGeneticImport):
         f.close()
         d["key"] = "probes"
 	self.df.columns = [ self.translateUUID(d.get(key, key)) for key in self.df.columns]
-        #print self.df.columns
         matrixFile = open("%s/%s.matrix_file" % (self.work_dir, dataSubType), "w" )
         sortedIndex = sorted(self.df.index)
         sortedCol = sorted(self.df.columns)
@@ -1088,11 +1082,8 @@ class HuEx1_0stv2(TCGAMatrixImport):
             colName = iHandle.readline().rstrip().split("\t")
             tmp = pd.read_csv(iHandle, sep="\t", header=0, index_col=0)
         tmp.columns = colName[1:]
-	#print tmp.shape,        
 	tmp = tmp.dropna()
-	#print tmp.shape
         self.df = pd.concat([self.df, tmp], axis=1)
-	#print self.df.shape
 
 class Human1MDuoImport(TCGASegmentImport):
     dataSubTypes = {
@@ -1203,8 +1194,6 @@ class Illumina_RNASeqV2(TCGAMatrixImport):
             tmp = pd.read_csv(iHandle, sep="\t", header=0, index_col=0)    
         fname = os.path.basename(path)
         wantedFields = self.dataSubTypes[dataSubType]['probeFields']
-        #print tmp.head()
-        #print wantedFields
         tmp = tmp.ix[:,wantedFields]
         tmp.columns = [fname]
         self.df = pd.concat([self.df, tmp], axis=1)
