@@ -533,7 +533,6 @@ class TCGAGeneticImport(FileImporter):
         elif colName[1] == "chrom":
             mode = 3
             target = os.path.basename( path ).split('.')[0]
-        
         if mode == 2:
             colName = [commonMap.get(colName[i], colName[i]) for i in range(len(colName))]
             secondLine = iHandle.readline()
@@ -558,7 +557,9 @@ class TCGAGeneticImport(FileImporter):
             else:
                 tmp = tmp.drop("file", 1)
                 wantedProbeFields = self.dataSubTypes[dataSubType]['probeFields']
-                tmp = tmp.ix[:,wantedProbeFields]
+                idx = [col in wantedProbeFields for col in colName]
+                idx = idx[1:]
+                tmp = tmp.ix[:,idx]
                 tmp.columns = [os.path.basename(path).split(".")[0]]
                 self.df = pd.concat([self.df, tmp], axis=1)
 
@@ -615,7 +616,6 @@ class TCGASegmentImport(TCGAGeneticImport):
         self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.segment_file"  % (self.work_dir, dataSubType) )
 
 def dict_merge(x, y):
-    #print "dict", x, y
     result = dict(x)
     for k,v in y.iteritems():
         if k in result:
@@ -657,7 +657,7 @@ class TCGAMatrixImport(TCGAGeneticImport):
             d[arr[0]] = arr[1].strip("\"").strip(".SD")
         f.close()
         d["key"] = "probes"
-	self.df.columns = [ self.translateUUID(d[key]) for key in self.df.columns]
+	self.df.columns = [ self.translateUUID(d.get(key, key)) for key in self.df.columns]
         matrixFile = open("%s/%s.matrix_file" % (self.work_dir, dataSubType), "w" )
         sortedIndex = sorted(self.df.index)
         sortedCol = sorted(self.df.columns)
@@ -932,7 +932,7 @@ class SNP6Import(TCGASegmentImport):
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['seg.mean', 'Segment_Mean'],
-            'fileInclude' : r'^.*\.hg19.seg.txt$',
+            'fileInclude' : r'^.*\.hg19.seg.txt$|^.*\.segmented.dat$',
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.hg19.cna.bed" % (x)
         },
@@ -940,7 +940,7 @@ class SNP6Import(TCGASegmentImport):
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['seg.mean',  'Segment_Mean'],
-            'fileInclude' : r'^.*\.nocnv_hg19.seg.txt$',
+            'fileInclude' : r'^.*\.nocnv_hg19.seg.txt$|^.*\.segmented.dat$',
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.hg19.cna_nocnv.bed" % (x)
         },
@@ -948,7 +948,7 @@ class SNP6Import(TCGASegmentImport):
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['Num_Probes'],
-            'fileInclude' : r'^.*\.hg19.seg.txt$',
+            'fileInclude' : r'^.*\.hg19.seg.txt$|^.*\.segmented.dat$',
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.hg19.cna_probecount.bed" % (x)
         },
@@ -956,7 +956,7 @@ class SNP6Import(TCGASegmentImport):
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['Num_Probes'],
-            'fileInclude' : r'^.*\.nocnv_hg19.seg.txt$',
+            'fileInclude' : r'^.*\.nocnv_hg19.seg.txt$|^.*\.segmented.dat$',
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.hg19.cna_nocnv_probecount.bed" % (x)
         }
@@ -975,7 +975,7 @@ class SNP6Import(TCGASegmentImport):
         handle.close()
     
     def fileBuild(self, dataSubType):
-        tmap = self.getTargetMap()  
+        tmap = self.getTargetMap()
         self.df["key"] = self.df["key"].apply(self.convertKey, tmap=tmap)
         self.df["chrom"] = self.df["chrom"].apply(correctChrom)
         segFile = open("%s/%s.out"  % (self.work_dir, dataSubType), "w")
@@ -993,6 +993,7 @@ class HmiRNAImport(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
             'probeFields' : ['unc_DWD_Batch_adjusted'],
+            'fileExclude' : r'targets',
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.miRNAExp.tsv" % (x)
         }
@@ -1212,16 +1213,15 @@ class MDA_RPPA_Core(TCGAMatrixImport):
         "RPPA" : {
             'sampleMap' : 'tcga.iddag',
             'probeMap' : "md_anderson_antibodies",
-            'fileExclude' : r'^.*.antibody_annotation.txt|^.*array_design.txt|^.*idf.txt|^.*sdrf.txt|targets$',
+            'fileExclude' : r'^.*.antibody_annotation.txt|^.*array_design*|^.*idf.txt|^.*sdrf.txt|targets$',
             'probeFields' : [ 'Protein Expression', 'Protein.Expression' ],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.RPPA.tsv" % (x)
         }
     }
 
-    def getTargetMap(self):
-        subprocess.call("sort -k 1 %s/targets > %s/targets.sort" % (self.work_dir, self.work_dir), shell=True)                
-        handle = TableReader(self.work_dir + "/targets.sort")
+    def getTargetMap(self):              
+        handle = TableReader(self.work_dir + "/targets")
         tTrans = {}
         for key, value in handle:
             value = re.sub(r'\.SD', '', value)
