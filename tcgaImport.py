@@ -130,6 +130,7 @@ class BuildConf:
         self.metapath = opts.metapath
         self.errorpath = opts.errorpath
         self.clinical_type = opts.clinical_type
+        self.rmControl = opts.rmControl
 
         self.clinical_type_map = {}
         for t, path, meta in opts.out_clinical:
@@ -299,7 +300,7 @@ class FileImporter:
     def __init__(self, config, build_req):
         self.config = config
         self.build_req = build_req
-    	#variable df, which is the data frame keeping all the data, it will be assigned in the run() method
+    	#variable df, which is the data frame keeping all the data, it will be assigned in the  ) method
         self.df = None
 
     def extractTars(self):  
@@ -408,7 +409,7 @@ idfMap = {
     "Person Affiliation" : "dataProducer",
     "Date of Experiment" : "experimentalDate"
 }
-
+exclusionList = ["TCGA-07-0249", "TCGA-07-7600", "TCGA-AV-A03E", "TCGA-AV-A3E6", "TCGA-AV-A03D", "TCGA-07-0227", "231 Control", "231 IGF", "468 Control", "468 EGF", "Jurkat Control", "Jurkat Fas", "Mixed Lysate", "BD_Human_Tissue_Ref_RNA_Extract", "BioChain_RtHanded_Total_", "tratagene_Cell_Line_Hum_Ref_RNA_Extract"]
 class TCGAGeneticImport(FileImporter):      
     
     def mageScan(self, path):
@@ -662,6 +663,18 @@ class TCGAMatrixImport(TCGAGeneticImport):
         sortedIndex = sorted(self.df.index)
         sortedCol = sorted(self.df.columns)
         self.df = self.df.ix[sortedIndex, sortedCol]
+        newCols = []
+        if self.config.rmControl :
+            for col in self.df.columns:
+                toAdd = True
+                for item in exclusionList:
+                    if col.startswith(item):
+                        toAdd = False
+                if not col.startswith("TCGA") and not col in exclusionList:
+                    print col
+                if toAdd:
+                    newCols.append(col)
+            self.df = self.df.ix[:, newCols]
         self.df.to_csv(matrixFile, header=True, sep="\t", index=True, float_format="%.4g")
         matrixFile.close()
         matrixName = self.config.name    
@@ -1744,7 +1757,8 @@ if __name__ == "__main__":
     parser_build.add_argument("-e", "--level", dest="level", help="Data Level ", default="3")
     parser_build.add_argument("--checksum", dest="checksum", help="Check project md5", action="store_true", default=False)
     parser_build.add_argument("--checksum-delete", dest="checksum_delete", help="Check project md5 and delete bad files", action="store_true", default=False)
-    parser_build.add_argument("-r", "--sanitize", dest="sanitize", action="store_true", help="Remove race/ethnicity from clinical data", default=False) 
+    parser_build.add_argument("-r", "--sanitize", dest="sanitize", action="store_true", help="Remove race/ethnicity from clinical data", default=False)
+    parser_build.add_argument("--rmControl", dest="rmControl", help="Remove Control Sample", action="store_true", default=False)    
 
     #output
     parser_build.add_argument("--report", dest="report", help="Print Build Report", action="store_true", default=False)
