@@ -659,24 +659,19 @@ class TCGAMatrixImport(TCGAGeneticImport):
         f.close()
         d["key"] = "probes"
 	self.df.columns = [ self.translateUUID(d.get(key, key)) for key in self.df.columns]
-        matrixFile = open("%s/%s.matrix_file" % (self.work_dir, dataSubType), "w" )
+        if self.config.rmControl:
+            newCols = [col for col in self.df.columns if not any([col.startswith(item) for item in exclusionList])]
+	    print "**************************************************************"
+            print newCols
+            print len(newCols), self.df.shape
+	    print "**************************************************************"
+            self.df = self.df.ix[:, list(set(newCols))]
+        print self.df.shape        
         sortedIndex = sorted(self.df.index)
-        sortedCol = sorted(self.df.columns)
+        sortedCol = sorted(list(set(self.df.columns)))
         self.df = self.df.ix[sortedIndex, sortedCol]
-        newCols = []
-        if self.config.rmControl :
-            for col in self.df.columns:
-                toAdd = True
-                for item in exclusionList:
-                    if col.startswith(item):
-                        toAdd = False
-                if not col.startswith("TCGA") and not col in exclusionList:
-                    print col
-                if toAdd:
-                    newCols.append(col)
-            self.df = self.df.ix[:, newCols]
+        matrixFile = "%s/%s.matrix_file" % (self.work_dir, dataSubType)
         self.df.to_csv(matrixFile, header=True, sep="\t", index=True, float_format="%.4g")
-        matrixFile.close()
         matrixName = self.config.name    
         self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.matrix_file"  % (self.work_dir, dataSubType)) 
 
