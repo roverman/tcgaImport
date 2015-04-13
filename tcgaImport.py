@@ -300,7 +300,7 @@ class FileImporter:
     def __init__(self, config, build_req):
         self.config = config
         self.build_req = build_req
-    	#variable df, which is the data frame keeping all the data, it will be assigned in the  ) method
+    	#variable df, which is the data frame keeping all the data, it will be assigned in the run() method
         self.df = None
 
     def extractTars(self):  
@@ -661,12 +661,7 @@ class TCGAMatrixImport(TCGAGeneticImport):
 	self.df.columns = [ self.translateUUID(d.get(key, key)) for key in self.df.columns]
         if self.config.rmControl:
             newCols = [col for col in self.df.columns if not any([col.startswith(item) for item in exclusionList])]
-	    print "**************************************************************"
-            print newCols
-            print len(newCols), self.df.shape
-	    print "**************************************************************"
             self.df = self.df.ix[:, list(set(newCols))]
-        print self.df.shape        
         sortedIndex = sorted(self.df.index)
         sortedCol = sorted(list(set(self.df.columns)))
         self.df = self.df.ix[sortedIndex, sortedCol]
