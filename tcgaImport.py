@@ -130,6 +130,7 @@ class BuildConf:
         self.metapath = opts.metapath
         self.errorpath = opts.errorpath
         self.clinical_type = opts.clinical_type
+        self.rmControl = opts.rmControl
 
         self.clinical_type_map = {}
         for t, path, meta in opts.out_clinical:
@@ -408,7 +409,7 @@ idfMap = {
     "Person Affiliation" : "dataProducer",
     "Date of Experiment" : "experimentalDate"
 }
-
+exclusionList = ["TCGA-07-0249", "TCGA-07-7600", "TCGA-AV-A03E", "TCGA-AV-A3E6", "TCGA-AV-A03D", "TCGA-07-0227", "231 Control", "231 IGF", "468 Control", "468 EGF", "Jurkat Control", "Jurkat Fas", "Mixed Lysate", "BD_Human_Tissue_Ref_RNA_Extract", "BioChain_RtHanded_Total_", "tratagene_Cell_Line_Hum_Ref_RNA_Extract"]
 class TCGAGeneticImport(FileImporter):      
     
     def mageScan(self, path):
@@ -658,14 +659,16 @@ class TCGAMatrixImport(TCGAGeneticImport):
         f.close()
         d["key"] = "probes"
 	self.df.columns = [ self.translateUUID(d.get(key, key)) for key in self.df.columns]
-        matrixFile = open("%s/%s.matrix_file" % (self.work_dir, dataSubType), "w" )
+        if self.config.rmControl:
+            newCols = [col for col in self.df.columns if not any([col.startswith(item) for item in exclusionList])]
+            self.df = self.df.ix[:, list(set(newCols))]
         sortedIndex = sorted(self.df.index)
-        sortedCol = sorted(self.df.columns)
+        sortedCol = sorted(list(set(self.df.columns)))
         self.df = self.df.ix[sortedIndex, sortedCol]
+        matrixFile = "%s/%s.matrix_file" % (self.work_dir, dataSubType)
         self.df.to_csv(matrixFile, header=True, sep="\t", index=True, float_format="%0.6g")
-        matrixFile.close()
         matrixName = self.config.name    
-        self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.matrix_file"  % (self.work_dir, dataSubType)) 
+        self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), matrixFile) 
 
 
 adminNS = "http://tcga.nci/bcr/xml/administration/2.3"
@@ -1744,7 +1747,8 @@ if __name__ == "__main__":
     parser_build.add_argument("-e", "--level", dest="level", help="Data Level ", default="3")
     parser_build.add_argument("--checksum", dest="checksum", help="Check project md5", action="store_true", default=False)
     parser_build.add_argument("--checksum-delete", dest="checksum_delete", help="Check project md5 and delete bad files", action="store_true", default=False)
-    parser_build.add_argument("-r", "--sanitize", dest="sanitize", action="store_true", help="Remove race/ethnicity from clinical data", default=False) 
+    parser_build.add_argument("-r", "--sanitize", dest="sanitize", action="store_true", help="Remove race/ethnicity from clinical data", default=False)
+    parser_build.add_argument("--rmControl", dest="rmControl", help="Remove Control Sample", action="store_true", default=False)    
 
     #output
     parser_build.add_argument("--report", dest="report", help="Print Build Report", action="store_true", default=False)

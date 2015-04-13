@@ -36,3 +36,4 @@ for f in os.listdir(folder):
                                             os.stat(old_folder+f).st_size/1024.**2, 
                                             `dim_new`, `dim_old`,
                                             missingGenes, newGenes,)
+
