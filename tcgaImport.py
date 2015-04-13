@@ -610,7 +610,7 @@ class TCGASegmentImport(TCGAGeneticImport):
         self.df["key"] = self.df["key"].apply(self.convertKey, tmap=tmap)
         self.df = self.df[self.df.key != 'NA']
         self.df["chrom"] = self.df["chrom"].apply(correctChrom)
-        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4g")     
+        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%0.6g")     
         segFile.close()
         matrixName = self.config.name
 
@@ -666,9 +666,9 @@ class TCGAMatrixImport(TCGAGeneticImport):
         sortedCol = sorted(list(set(self.df.columns)))
         self.df = self.df.ix[sortedIndex, sortedCol]
         matrixFile = "%s/%s.matrix_file" % (self.work_dir, dataSubType)
-        self.df.to_csv(matrixFile, header=True, sep="\t", index=True, float_format="%.4g")
+        self.df.to_csv(matrixFile, header=True, sep="\t", index=True, float_format="%0.6g")
         matrixName = self.config.name    
-        self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.matrix_file"  % (self.work_dir, dataSubType)) 
+        self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), matrixFile) 
 
 
 adminNS = "http://tcga.nci/bcr/xml/administration/2.3"
@@ -982,7 +982,7 @@ class SNP6Import(TCGASegmentImport):
         self.df["key"] = self.df["key"].apply(self.convertKey, tmap=tmap)
         self.df["chrom"] = self.df["chrom"].apply(correctChrom)
         segFile = open("%s/%s.out"  % (self.work_dir, dataSubType), "w")
-        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%.4g")     
+        self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%0.6g")     
         segFile.close()
         meta = self.getMeta(self.config.name + ".hg19", dataSubType)
         meta['annotations']['assembly'] = { "@id" : 'hg19' }
