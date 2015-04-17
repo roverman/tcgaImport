@@ -358,7 +358,7 @@ class FileImporter:
             else:
                 if dataSubType is not None:
                     if not self.checkExclude(name):
-                        if (filterInclude is None or filterInclude.match(name)) and (filterExclude is None or not filterExclude.match(name)):
+                        if (filterInclude is None or filterInclude.match(name)) and (filterExclude is None or not filterExclude.match(path)):
                             self.fileScan(path, dataSubType)
                         
     def isMage(self, path):
@@ -521,6 +521,7 @@ class TCGAGeneticImport(FileImporter):
         #1 - segmentFile - one sample per file/no sample info inside file
         #2 - two col header matrix file
         #3 - segmentFile - sample information inside file
+        #None something else
         target = None
         colName = None
         colType = None
@@ -1237,6 +1238,7 @@ class Illumina_miRNASeq(TCGAMatrixImport):
         'miRNAExp' : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : '^.*.mirna.quantification.txt$',
+            'fileExclude' : '^.*COAD.*[^hg19]\.mirna.quantification.txt$',  #Special case for COAD having two sets of files
             'probeFields' : ['reads_per_million_miRNA_mapped'],
             'probeMap' : 'hsa.mirna',
             'extension' : 'tsv',
