@@ -9,7 +9,8 @@ project="syn2812961"
 files = {x["file.name"]: x["file.id"] for x in syn.chunkedQuery("select name from file where benefactorId=='%s'"%project)}
 print 'file\tabs(maxdiff)\tmaxdiff%\tfileSize new\tfileSize old\tnew dim\told dim\tmissing_Genes_in_new\tnew_Genes_in_new'
 for f in os.listdir(folder):
-    if f.endswith(".json") or f.endswith(".bed") or f.endswith(".maf"):
+    if (f.endswith(".json") or f.endswith(".bed") or 
+        f.endswith(".maf") or f.endswith('.ttl')):
         continue
     if os.path.isfile(old_folder+f):
         df_old = pd.read_csv(old_folder+f, sep="\t", index_col=0, na_values=['null']).astype('float')
