@@ -1164,6 +1164,7 @@ class Illumina_RNASeq(TCGAMatrixImport):
         'geneExp' : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : r'^.*\.gene.quantification.txt$|^.*sdrf.txt$',
+            'fileExclude' : r'bcgsc.ca_OV.IlluminaHiSeq_RNASeq*[^hg19]\.gene.quantification.txt$', #Has hg19 as well
             'probeFields' : ['RPKM'],
             'probeMap' : 'hugo.unc',
             'extension' : 'tsv',
@@ -1238,7 +1239,9 @@ class Illumina_miRNASeq(TCGAMatrixImport):
         'miRNAExp' : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : '^.*.mirna.quantification.txt$',
-            'fileExclude' : '^.*COAD.*[^hg19]\.mirna.quantification.txt$',  #Special case for COAD having two sets of files
+            'fileExclude' : ('^.*COAD.*[^hg19]\.mirna.quantification.txt$|'
+                             '^.*OV.*hg19.mirna.quantification.txt$|'
+                             '^.*READ.*hg19.mirna.quantification.txt$'),  #Special case for COAD/OV/READ having two sets of files
             'probeFields' : ['reads_per_million_miRNA_mapped'],
             'probeMap' : 'hsa.mirna',
             'extension' : 'tsv',
