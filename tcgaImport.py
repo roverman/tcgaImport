@@ -666,7 +666,7 @@ class TCGAMatrixImport(TCGAGeneticImport):
         matrixName = self.config.name    
         self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), matrixFile) 
 
-class TCGASegmentImport_new(TCGASegmentImport):
+class TCGASegmentImport_HumanHap(TCGASegmentImport):
     
     def fileScan(self, path, dataSubType):
         """
@@ -1093,7 +1093,7 @@ class HuEx1_0stv2(TCGAMatrixImport):
 	tmp = tmp.dropna()
         self.df = pd.concat([self.df, tmp], axis=1)
 
-class Human1MDuoImport(TCGASegmentImport_new):
+class Human1MDuoImport(TCGASegmentImport_HumanHap):
     dataSubTypes = {
         'cna' : {
             'sampleMap' : 'tcga.iddag',
@@ -1106,7 +1106,7 @@ class Human1MDuoImport(TCGASegmentImport_new):
         }
     }
 
-class HumanHap550(TCGASegmentImport_new):
+class HumanHap550(TCGASegmentImport_HumanHap):
     dataSubTypes = {
         'cna' : {
             'sampleMap' : 'tcga.iddag',
