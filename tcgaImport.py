@@ -8,7 +8,6 @@ Script to scan and extract TCGA data and compile it into coherent matrices
 
 from xml.dom.minidom import parseString
 import urllib
-import urllib2
 import time
 import os
 import csv
@@ -16,7 +15,6 @@ import sys
 import hashlib
 import tempfile
 import re
-import copy
 import random
 import json
 import datetime
@@ -409,7 +407,7 @@ idfMap = {
     "Person Affiliation" : "dataProducer",
     "Date of Experiment" : "experimentalDate"
 }
-exclusionList = ["TCGA-07-0249", "TCGA-07-7600", "TCGA-AV-A03E", "TCGA-AV-A3E6", "TCGA-AV-A03D", "TCGA-07-0227", "231 Control", "231 IGF", "468 Control", "468 EGF", "Jurkat Control", "Jurkat Fas", "Mixed Lysate", "BD_Human_Tissue_Ref_RNA_Extract", "BioChain_RtHanded_Total_", "tratagene_Cell_Line_Hum_Ref_RNA_Extract"]
+exclusionList = ["TCGA-07-0249", "TCGA-07-7600", "TCGA-AV-A03E", "TCGA-AV-A3E6", "TCGA-AV-A03D", "TCGA-07-0227", "231 Control", "231 IGF", "468 Control", "468 EGF", "Control_Jurkat", "Jurkat Control", "Jurkat Fas", "Mixed Lysate", "BD_Human_Tissue_Ref_RNA_Extract", "BioChain_RtHanded_Total_", "tratagene_Cell_Line_Hum_Ref_RNA_Extract"]
 class TCGAGeneticImport(FileImporter):      
     
     def mageScan(self, path):
@@ -580,7 +578,7 @@ class TCGASegmentImport(TCGAGeneticImport):
         the type of data being emited
         """
         with open(path,'U') as iHandle:
-            tmp = pd.read_csv(iHandle, sep="\t", header=0)
+            tmp = pd.read_csv(iHandle, sep="\t", header=0, dtype='object')
         
         tmp['key'] = os.path.basename(path)
         tmp.columns = [commonMap.get(col, col) for col in tmp.columns] 
@@ -665,7 +663,8 @@ class TCGAMatrixImport(TCGAGeneticImport):
             self.df = self.df.ix[:, list(set(newCols))]
         sortedIndex = sorted(self.df.index)
         sortedCol = sorted(list(set(self.df.columns)))
-        self.df = self.df.ix[sortedIndex, sortedCol]
+        self.df = self.df.ix[:, sortedCol]
+        #self.df = self.df.ix[sortedIndex, sortedCol]
         matrixFile = "%s/%s.matrix_file" % (self.work_dir, dataSubType)
         self.df.to_csv(matrixFile, header=True, sep="\t", index=True, float_format="%0.6g")
         matrixName = self.config.name    
@@ -909,7 +908,7 @@ class AgilentImport(TCGAMatrixImport):
             'probeMap' : 'hugo',
             'sampleMap' : 'tcga.iddag',
             'dataType'  : 'genomicMatrix',
-            'fileExclude' : r'targets',
+            'fileExclude' : r'.*targets$',
             'probeFields' : ['log2 lowess normalized (cy5/cy3) collapsed by gene symbol'],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.geneExp.tsv" % (x)
@@ -923,8 +922,7 @@ class CGH1x1mImport(TCGASegmentImport):
             "sampleMap" : 'tcga.iddag',
             "dataType" : 'genomicSegment',
             "probeFields" : ['seg.mean'],
-            'fileExclude' : r'targets',
-            'extension' : 'bed',
+            'fileExclude' : r'.*targets$',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
         }
     }
@@ -997,7 +995,7 @@ class HmiRNAImport(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
             'probeFields' : ['unc_DWD_Batch_adjusted'],
-            'fileExclude' : r'targets',
+            'fileExclude' : r'.*targets$',
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.miRNAExp.tsv" % (x)
         }
@@ -1008,7 +1006,7 @@ class CGH244AImport(TCGASegmentImport):
         'cna' : {
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
-            'fileExclude' : r'targets',
+            'fileExclude' : r'.*targets$',
             'probeFields' : ['Segment_Mean','seg.mean'],
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
@@ -1021,7 +1019,7 @@ class CGH415K_G4124A(TCGASegmentImport):
             'sampleMap' : 'tcga.iddag',
             'chromeField' : 'Chromosome',
             'dataType' : 'genomicSegment',
-            'fileExclude' : r'targets',
+            'fileExclude' : r'.*targets$',
             'endField' : 'End',
             'probeFields' : ['Segment_Mean'],
             'startField' : 'Start',
@@ -1038,7 +1036,7 @@ class IlluminaHiSeq_DNASeqC(TCGASegmentImport):
             'dataType' : 'genomicSegment',
             'endField' : 'End',
             'probeFields' : ['Segment_Mean'],
-            'fileExclude' : r'targets',
+            'fileExclude' : r'.*targets$',
             'startField' : 'Start',
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
@@ -1058,7 +1056,7 @@ class HT_HGU133A(TCGAMatrixImport):
             'probeMap' : 'affyU133a',
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
-            'fileExclude' : r'targets',
+            'fileExclude' : r'.*targets$',
             'probeFields' : ['Signal', 'Value'],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.geneExp.tsv" % (x)
@@ -1092,7 +1090,7 @@ class Human1MDuoImport(TCGASegmentImport):
         'cna' : {
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
-            'fileExclude' : r'targets',
+            'fileExclude' : r'.*targets$',
             'probeFields' : ['mean'],
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
@@ -1104,7 +1102,7 @@ class HumanHap550(TCGASegmentImport):
         'cna' : {
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
-            'fileExclude' : r'targets',
+            'fileExclude' : r'.*targets$',
             'probeFields' : ['mean'],
             'extension' : 'bed',
             'nameGen' : lambda x : "%s.cna.bed" % (x)
@@ -1117,7 +1115,7 @@ class HumanMethylation27(TCGAMatrixImport):
             'probeMap' : 'illuminaMethyl27K_gpl8490',
             'sampleMap' :  'tcga.iddag',
             'dataType' : 'genomicMatrix',
-            'fileExclude' : '.*.adf.txt|^.*idf.txt|^.*sdrf.txt|targets$',
+            'fileExclude' : '.*.adf.txt|^.*idf.txt|^.*sdrf.txt|^.*targets$',
             'probeFields' : ['Beta_Value', 'Beta_value'],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.betaValue.tsv" % (x)
@@ -1131,7 +1129,7 @@ class HumanMethylation450(TCGAMatrixImport):
             'probeMap' :  'illuminaHumanMethylation450',
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
-            'fileExclude' : '.*.adf.txt|^.*idf.txt|^.*sdrf.txt|targets$',
+            'fileExclude' : '.*.adf.txt|^.*idf.txt|^.*sdrf.txt|^.*targets$',
             'probeFields' :  ['Beta_value', 'Beta_Value'],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.betaValue.tsv" % (x)
@@ -1164,7 +1162,6 @@ class Illumina_RNASeq(TCGAMatrixImport):
         'geneExp' : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : r'^.*\.gene.quantification.txt$|^.*sdrf.txt$',
-            'fileExclude' : r'bcgsc.ca_OV.IlluminaHiSeq_RNASeq*[^hg19]\.gene.quantification.txt$', #Has hg19 as well
             'probeFields' : ['RPKM'],
             'probeMap' : 'hugo.unc',
             'extension' : 'tsv',
@@ -1206,6 +1203,8 @@ class IlluminaHiSeq_RNASeq(TCGAMatrixImport):
         'geneExp' : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : r'^.*gene.quantification.txt$',
+            'fileExclude' : (r'^.*bcgsc.ca_OV.IlluminaHiSeq_RNASeq.*hg19.gene.quantification.txt$|'
+                              '^.*bcgsc.ca_STAD.IlluminaHiSeq_RNASeq.*[^v2].gene.quantification.txt'),
             'probeFields' : ['RPKM'],
             'probeMap' : 'hugo.unc',
             'extension' : 'tsv',
@@ -1218,7 +1217,7 @@ class MDA_RPPA_Core(TCGAMatrixImport):
         "RPPA" : {
             'sampleMap' : 'tcga.iddag',
             'probeMap' : "md_anderson_antibodies",
-            'fileExclude' : r'^.*.antibody_annotation.txt|^.*array_design*|^.*idf.txt|^.*sdrf.txt|targets$',
+            'fileExclude' : r'^.*.antibody_annotation.txt|^.*array_design*|^.*idf.txt|^.*sdrf.txt|^.*targets$',
             'probeFields' : [ 'Protein Expression', 'Protein.Expression' ],
             'extension' : 'tsv',
             'nameGen' : lambda x : "%s.RPPA.tsv" % (x)
