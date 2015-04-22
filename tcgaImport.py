@@ -496,15 +496,12 @@ class TCGAGeneticImport(FileImporter):
         return self.config.translateUUID(uuid)
     
     def getTargetMap(self):
-        subprocess.call("sort -k 1 %s/targets > %s/targets.sort" % (self.work_dir, self.work_dir), shell=True)                
-        handle = TableReader(self.work_dir + "/targets.sort")
+        handle = TableReader(self.work_dir + "/targets")
         tTrans = {}
         for key, value in handle:
             tTrans[ key ] = value
         return tTrans
     
-    
-
     
     def fileScan(self, path, dataSubType):
         """
@@ -564,9 +561,7 @@ class TCGAGeneticImport(FileImporter):
                 self.df = pd.concat([self.df, tmp], axis=1)
 
     def convertKey(self, key, tmap):
-        if not key in tmap:
-            return self.translateUUID(key)
-        return self.translateUUID(tmap[key])
+        return self.translateUUID(tmap.get(key, key))
 
 class TCGASegmentImport(TCGAGeneticImport):
 
@@ -582,8 +577,9 @@ class TCGASegmentImport(TCGAGeneticImport):
         
         tmp['key'] = os.path.basename(path)
         tmp.columns = [commonMap.get(col, col) for col in tmp.columns] 
-        tmp = tmp.ix[:,["chrom", "loc.start", "loc.end", "key", "seg.mean"]]
-        self.df = self.df.append(tmp)
+        self.df = self.df.append(tmp[["chrom", "loc.start", "loc.end", "key", "seg.mean"]])
+        self.df = self.df[["chrom", "loc.start", "loc.end", "key", "seg.mean"]] #Fix order to be bed5 compatible
+
 
     def getMeta(self, name, dataSubType):
         matrixInfo = { 
@@ -604,16 +600,16 @@ class TCGASegmentImport(TCGAGeneticImport):
         #use the target table to create a name translation table
         #also setup target name enumeration, so they will have columns
         #numbers         
+        segFile = "%s/%s.segment_file"  % (self.work_dir, dataSubType)
         tmap = self.getTargetMap()
-        segFile = open("%s/%s.segment_file"  % (self.work_dir, dataSubType), "w") 
+
         self.df["key"] = self.df["key"].apply(self.convertKey, tmap=tmap)
         self.df = self.df[self.df.key != 'NA']
         self.df["chrom"] = self.df["chrom"].apply(correctChrom)
         self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%0.6g")     
-        segFile.close()
-        matrixName = self.config.name
 
-        self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.segment_file"  % (self.work_dir, dataSubType) )
+        matrixName = self.config.name
+        self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), segFile)
 
 def dict_merge(x, y):
     result = dict(x)
@@ -1043,12 +1039,6 @@ class IlluminaHiSeq_DNASeqC(TCGASegmentImport):
         }
     }
     
-    def translateUUID(self, uuid):
-        out = self.config.translateUUID(uuid)
-        #censor out normal ids
-        if re.search(r'^TCGA-..-....-1', out):
-            return ""
-        return out
 
 class HT_HGU133A(TCGAMatrixImport):
     dataSubTypes = {
