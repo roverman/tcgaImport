@@ -27,7 +27,8 @@ import logging
 from argparse import ArgumentParser
 from urlparse import urlparse
 import pandas as pd
-
+import interval2matrix
+import synapseclient
 
 """
 
@@ -387,7 +388,26 @@ class FileImporter:
             for msg in self.errors:
                 eHandle.write( msg + "\n" )
             eHandle.close()
-    
+
+    def emitBEDMatrix(self, dataSubType, meta, file):
+        md5 = hashlib.md5()
+        oHandle = open(os.path.join(self.config.outdir, meta['name']), "wb")
+        with open(file,'rb') as f: 
+            for chunk in iter(lambda: f.read(8192), ''): 
+                md5.update(chunk)
+                oHandle.write(chunk)
+        oHandle.close()
+        md5str = md5.hexdigest()
+        meta['annotations']['md5'] = md5str
+        mHandle = open(os.path.join(self.config.outdir, meta['name']) + ".json", "w")
+        mHandle.write( json.dumps(meta))
+        mHandle.close()
+        if len(self.errors):
+            eHandle = open( self.config.getOutError(dataSubType), "w" )
+            for msg in self.errors:
+                eHandle.write( msg + "\n" )
+            eHandle.close()
+
     def addError(self, msg):
         self.errors.append(msg)
 
@@ -595,21 +615,39 @@ class TCGASegmentImport(TCGAGeneticImport):
         matrixInfo = dict_merge(matrixInfo, self.ext_meta)
         matrixInfo = dict_merge(matrixInfo, self.config.meta)
         return matrixInfo
+    
+    def getMeta_matrix(self, name, dataSubType):
+        matrixInfo = { 
+            'name' : name + "." + dataSubType + ".tsv", 
+            'annotations' : {
+                'filetype' : 'tsv', 
+                "lastModified" : self.config.version,
+                'colKeySrc' : "tcga.%s" % (self.config.abbr),
+                'dataSubType' : dataSubType,
+                'dataProducer' : 'TCGA',
+            }
+        }
+        matrixInfo = dict_merge(matrixInfo, self.ext_meta)
+        matrixInfo = dict_merge(matrixInfo, self.config.meta)
+        return matrixInfo
 
     def fileBuild(self, dataSubType):
         #use the target table to create a name translation table
         #also setup target name enumeration, so they will have columns
-        #numbers         
+        #numbers  
         segFile = "%s/%s.segment_file"  % (self.work_dir, dataSubType)
+        matrixFile = "%s/%s.matrix"%(self.work_dir, dataSubType)
         tmap = self.getTargetMap()
-
+        
         self.df["key"] = self.df["key"].apply(self.convertKey, tmap=tmap)
         self.df = self.df[self.df.key != 'NA']
         self.df["chrom"] = self.df["chrom"].apply(correctChrom)
         self.df.to_csv(segFile, index=False, header=False, sep="\t", float_format="%0.6g")     
-
+                 
         matrixName = self.config.name
+        interval2matrix.transformBED(os.path.join(self.config.workdir_base, "geneSet.v4_0.gtf"), segFile, matrixFile)
         self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), segFile)
+        self.emitBEDMatrix( dataSubType, self.getMeta_matrix(matrixName, dataSubType), matrixFile)
 
 def dict_merge(x, y):
     result = dict(x)
