@@ -1,0 +1,3 @@
+[submodule "interval2matrix"]
+	path = interval2matrix
+	url = https://github.com/kellrott/interval2matrix
